@@ -1,3 +1,2 @@
-Reproduce DeepMind MuZero on Atari
-
-Paper: https://arxiv.org/pdf/1911.08265.pdf
+- [DQN](https://www.cs.toronto.edu/~vmnih/docs/dqn.pdf)
+- [MuZero](https://arxiv.org/pdf/1911.08265.pdf)

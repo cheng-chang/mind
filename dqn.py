@@ -26,7 +26,7 @@ def preprocess_raw_image(image):
   """Preprocess raw image returned from simulator.
 
   1. RGB to grayscale
-  2. downsampling to INPUT_SHAPE
+  2. downsampling to PREPROCESSED_IMAGE_SHAPE
 
   Arguments:
     image: (210, 160, 3) ndarray
@@ -38,7 +38,7 @@ def preprocess_raw_image(image):
 
 class DQN:
   def __init__(self):
-    self.Q = _build_dqn()
+    self._Q = _build_dqn()
 
   def _build_dqn():
     """Build the Deep-Q-Network."""
@@ -61,18 +61,42 @@ class DQN:
 
 
 class Memory:
+  """Memory of transitions.
+  
+  Each transition is (state, action, reward, next_state).
+  state is defined by Trajectory.state().
+
+  Has a maximum capacity, when capacity is overlimit,
+  eviction happens automatically.
+  """
   def __init__(self, capacity):
-    self.capacity = capacity
-    self.memory = []
+    self._capacity = capacity
+    self._memory = []
 
   def add(self, s, a, r, ns):
-    pass
+    """Add a new transition.
+
+    If the memory is already full, evict one before adding.
+    """
+    if len(self._memory) == self._capacity:
+      self._evict()
+    self._memory.append((s, a, r, ns))
 
   def sample(self, size):
-    pass
+    """Randomly sample a batch of transitions from the memory.
+
+    The batch size is min(size, memory size).
+    """
+    random.shuffle(self._memory)
+    return self._memory[:size]
 
   def _evict(self):
-    pass
+    """Evict a transition when memory is full.
+
+    If sample is never called, then evicts the oldest transition.
+    If sample is ever called, then the first transition is a random one.
+    """
+    self._memory.pop(0)
 
 
 class Trajectory:
@@ -91,11 +115,11 @@ def train():
   Q = DQN()
   memory = Memory(MEMORY_SIZE)
   for epoch in range(EPOCHS):
-    print('Epoch ', epoch)
+    print('Epoch {} / {}'.format(epoch, EPOCHS))
     rewards = 0
     steps = 0
     traj = Trajectory(env.reset())
-    for t in tqdm(range(EPOCH_STEPS)):
+    for step in tqdm(range(EPOCH_STEPS)):
       s = traj.state()
       if random.random() <= EPSILON:
         a = random_action()

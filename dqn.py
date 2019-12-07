@@ -19,25 +19,6 @@ SAMPLE_SIZE = 100
 ACTIONS = 4
 
 
-def random_action():
-  return int(random.random() * ACTIONS)
-
-
-def preprocess_raw_image(image):
-  """Preprocess raw image returned from simulator.
-
-  RGB to grayscale and downsampling.
-
-  Arguments:
-    image: (210, 160, 3) ndarray
-
-  Returns:
-    tensor of shape PREPROCESSED_IMAGE_SHAPE
-  """
-  resized = tf.image.resize(image, PREPROCESSED_IMAGE_SHAPE)
-  return tf.image.rgb_to_grayscale(resized)
-
-
 class DQN:
   def __init__(self):
     self._Q = _build_dqn()
@@ -52,8 +33,14 @@ class DQN:
     Q.add(layers.Dense(ACTIONS, activation='softmax'))
     return Q
 
-  def action(self, state):
+  def _random_action(self):
+    return int(random.random() * ACTIONS)
+
+  def _optimal_action(self):
     pass
+
+  def action(self, state):
+    return self._random_action() if random.random() <= EPSILON else self._optimal_action(state)
 
   def _max_q_value(self, state):
     pass
@@ -122,6 +109,20 @@ class Trajectory:
     """
     self._traj += [a, x]
 
+  def _preprocess_raw_image(self, image):
+    """Preprocess raw image returned from simulator.
+
+    RGB to grayscale and downsampling.
+
+    Arguments:
+      image: (210, 160, 3) ndarray
+
+    Returns:
+      tensor of shape PREPROCESSED_IMAGE_SHAPE
+    """
+    resized = tf.image.resize(image, PREPROCESSED_IMAGE_SHAPE)
+    return tf.image.rgb_to_grayscale(resized)
+
   def state(self):
     """Preprocess the last 4 raw images to a state.
 
@@ -131,15 +132,7 @@ class Trajectory:
     """
     assert(len(self._traj) >= 7)
     last_4_images = self._traj[::2][-4:]
-    return np.array([preprocess_raw_image(img).numpy() for img in last_4_images])
-
-
-def choose_action(Q, s):
-  if random.random() <= EPSILON:
-    a = random_action()
-  else:
-    a = Q.action(s)
-  return a
+    return np.array([self._preprocess_raw_image(img).numpy() for img in last_4_images])
 
 
 def train():
@@ -153,7 +146,7 @@ def train():
     traj = Trajectory(env.reset())
     for step in tqdm(range(EPOCH_STEPS)):
       s = traj.state()
-      a = choose_action(Q, s)
+      a = Q.action(s)
       x, r, done, _ = env.step(a)
       steps += 1
       rewards += r

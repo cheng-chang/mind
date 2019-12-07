@@ -1,5 +1,6 @@
 import random
 
+import numpy as np
 import gym
 import tensorflow as tf
 from tensorflow import keras
@@ -25,15 +26,16 @@ def random_action():
 def preprocess_raw_image(image):
   """Preprocess raw image returned from simulator.
 
-  1. RGB to grayscale
-  2. downsampling to PREPROCESSED_IMAGE_SHAPE
+  RGB to grayscale and downsampling.
 
   Arguments:
     image: (210, 160, 3) ndarray
+
+  Returns:
+    tensor of shape PREPROCESSED_IMAGE_SHAPE
   """
-  gray = tf.image.rgb_to_grayscale(image)
-  resized = tf.image.resize(gray, PREPROCESSED_IMAGE_SHAPE)
-  return resized
+  resized = tf.image.resize(image, PREPROCESSED_IMAGE_SHAPE)
+  return tf.image.rgb_to_grayscale(resized)
 
 
 class DQN:
@@ -100,14 +102,44 @@ class Memory:
 
 
 class Trajectory:
-  def __init__(self, initial_state):
-    pass
+  """Trajectory of raw state and actions ordered by time.
+
+  x is the raw image frame returned by the emulator.
+  a is the action.
+
+  When environment is reset, there is an initial raw image x0,
+  so a trajectory is (x0, a0, x1, a1, x2, ... ) until an epoch
+  is done or epoch steps are exhausted.
+  """
+  def __init__(self, x0):
+    self._traj = [x0]
 
   def add(self, a, x):
-    pass
+    """Add (a, x) to the trajectory.
+
+    a is the action taken at the current state,
+    x is the state transitioned to after a.
+    """
+    self._traj += [a, x]
 
   def state(self):
-    pass
+    """Preprocess the last 4 raw images to a state.
+
+    Each image is processed to a matrix,
+    then stack the 4 matrices together in increasing time order.
+    return ndarray with shape DQN_INPUT_SHAPE.
+    """
+    assert(len(self._traj) >= 7)
+    last_4_images = self._traj[::2][-4:]
+    return np.array([preprocess_raw_image(img).numpy() for img in last_4_images])
+
+
+def choose_action(Q, s):
+  if random.random() <= EPSILON:
+    a = random_action()
+  else:
+    a = Q.action(s)
+  return a
 
 
 def train():
@@ -121,14 +153,12 @@ def train():
     traj = Trajectory(env.reset())
     for step in tqdm(range(EPOCH_STEPS)):
       s = traj.state()
-      if random.random() <= EPSILON:
-        a = random_action()
-      else:
-        a = Q.action(s)
+      a = choose_action(Q, s)
       x, r, done, _ = env.step(a)
-      rewards += r
       steps += 1
+      rewards += r
       traj.add(a, x)
+      if step < 3: continue # traj.state needs at least 4 "x"
       memory.add(s, a, r, traj.state())
       Q.optmize(memory.sample(SAMPLE_SIZE))
       if done:

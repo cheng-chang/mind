@@ -52,7 +52,7 @@ class DQN:
 class Memory:
   """Memory of transitions.
   
-  Each transition is (state, action, reward, next_state).
+  Each transition is (state, action, reward, next_state, done).
   state is defined by Trajectory.state().
 
   Has a maximum capacity, when capacity is overlimit,
@@ -62,14 +62,14 @@ class Memory:
     self._capacity = capacity
     self._memory = []
 
-  def add(self, s, a, r, ns):
+  def add(self, s, a, r, ns, done):
     """Add a new transition.
 
     If the memory is already full, evict one before adding.
     """
     if len(self._memory) == self._capacity:
       self._evict()
-    self._memory.append((s, a, r, ns))
+    self._memory.append((s, a, r, ns, done))
 
   def sample(self, size):
     """Randomly sample a batch of transitions from the memory.
@@ -152,7 +152,7 @@ def train():
       rewards += r
       traj.add(a, x)
       if step < 3: continue # traj.state needs at least 4 "x"
-      memory.add(s, a, r, traj.state())
+      memory.add(s, a, r, traj.state(), done)
       Q.optmize(memory.sample(SAMPLE_SIZE))
       if done:
         break

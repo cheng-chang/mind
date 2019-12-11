@@ -30,14 +30,15 @@ class DQN:
     Q.add(layers.Conv2D(32, (4, 4), 2, activation='relu'))
     Q.add(layers.Flatten())
     Q.add(layers.Dense(256, activation='relu'))
-    Q.add(layers.Dense(ACTIONS, activation='softmax'))
+    Q.add(layers.Dense(ACTIONS))
     return Q
 
   def _random_action(self):
     return int(random.random() * ACTIONS)
 
   def _optimal_action(self, state):
-    pass
+    scores = self._Q.predict(np.array([state]))[0]
+    return int(tf.math.argmax(scores).numpy())
 
   def action(self, state):
     return self._random_action() if random.random() <= EPSILON else self._optimal_action(state)

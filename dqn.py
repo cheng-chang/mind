@@ -32,19 +32,26 @@ class DQN:
     Q.add(layers.Dense(256, activation='relu'))
     Q.add(layers.Dense(ACTIONS))
     return Q
+  
+  def _scores(self, state):
+    """Compute a forward pass of state through the Q network.
+
+    Returns:
+      a Tensor with Q values (scores) for each action, tensor shape is (1, 4)
+    """
+    return self._Q.predict(np.array([state]))[0]
 
   def _random_action(self):
     return int(random.random() * ACTIONS)
 
   def _optimal_action(self, state):
-    scores = self._Q.predict(np.array([state]))[0]
-    return int(tf.math.argmax(scores).numpy())
+    return int(tf.math.argmax(self._scores(state)))
 
   def action(self, state):
     return self._random_action() if random.random() <= EPSILON else self._optimal_action(state)
 
-  def _max_q_value(self, state):
-    pass
+  def _max_score(self, state):
+    return float(tf.math.reduce_max(self._scores(state)))
 
   def optimize(self, transitions):
     pass

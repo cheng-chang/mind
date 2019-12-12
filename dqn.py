@@ -12,6 +12,7 @@ EPOCHS = 10000
 EPOCH_STEPS = 1000
 EPSILON = 0.01
 GAMMA = 0.01
+RAW_IMAGE_SHAPE = (210, 160, 3)
 PREPROCESSED_IMAGE_SHAPE = (110, 84)
 DQN_INPUT_SHAPE = (*PREPROCESSED_IMAGE_SHAPE, 4)
 MEMORY_SIZE = 100
@@ -22,10 +23,10 @@ SGD_LEARNING_RATE = 1e-3
 
 class DQN:
   def __init__(self):
-    self._Q = _build_dqn()
+    self._Q = self._build_dqn()
     self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
 
-  def _build_dqn():
+  def _build_dqn(self):
     """Build the Deep-Q-Network."""
     Q = keras.Sequential()
     Q.add(layers.Conv2D(16, (8, 8), 4, activation='relu', input_shape=DQN_INPUT_SHAPE))
@@ -138,25 +139,29 @@ class Trajectory:
 
     RGB to grayscale and downsampling.
 
-    Arguments:
-      image: (210, 160, 3) ndarray
+    Args:
+      image: RAW_IMAGE_SHAPE ndarray
 
     Returns:
       tensor of shape PREPROCESSED_IMAGE_SHAPE
     """
     resized = tf.image.resize(image, PREPROCESSED_IMAGE_SHAPE)
-    return tf.image.rgb_to_grayscale(resized)
+    return tf.reshape(tf.image.rgb_to_grayscale(resized), PREPROCESSED_IMAGE_SHAPE)
+
+  def _left_zero_padding(self, arr, length, shape):
+    if len(arr) >= length:
+      return arr
+    return [np.zeros(shape)] * (length - len(arr)) + arr
 
   def state(self):
     """Preprocess the last 4 raw images to a state.
 
     Each image is processed to a matrix,
     then stack the 4 matrices together in increasing time order.
-    return ndarray with shape DQN_INPUT_SHAPE.
+    return Tensor with shape DQN_INPUT_SHAPE.
     """
-    assert(len(self._traj) >= 7)
-    last_4_images = self._traj[::2][-4:]
-    return np.array([self._preprocess_raw_image(img).numpy() for img in last_4_images])
+    last_4_images = self._left_zero_padding(self._traj[::2][-4:], 4, RAW_IMAGE_SHAPE)
+    return tf.stack([self._preprocess_raw_image(img).numpy() for img in last_4_images], 2)
 
 
 def train():
@@ -175,9 +180,8 @@ def train():
       steps += 1
       rewards += r
       traj.add(a, x)
-      if step < 3: continue # traj.state needs at least 4 "x"
       memory.add(s, a, r, traj.state(), done)
-      Q.optmize(memory.sample(SAMPLE_SIZE))
+      Q.optimize(memory.sample(SAMPLE_SIZE))
       if done:
         break
     print('steps = {}, rewards = {}'.format(steps, rewards))

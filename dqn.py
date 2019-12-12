@@ -17,11 +17,13 @@ DQN_INPUT_SHAPE = (*PREPROCESSED_IMAGE_SHAPE, 4)
 MEMORY_SIZE = 100
 SAMPLE_SIZE = 100
 ACTIONS = 4
+SGD_LEARNING_RATE = 1e-3
 
 
 class DQN:
   def __init__(self):
     self._Q = _build_dqn()
+    self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
 
   def _build_dqn():
     """Build the Deep-Q-Network."""
@@ -33,7 +35,7 @@ class DQN:
     Q.add(layers.Dense(ACTIONS))
     return Q
   
-  def _scores(self, state):
+  def _q_values(self, state):
     """Compute a forward pass of state through the Q network.
 
     Returns:
@@ -45,16 +47,30 @@ class DQN:
     return int(random.random() * ACTIONS)
 
   def _optimal_action(self, state):
-    return int(tf.math.argmax(self._scores(state)))
+    return int(tf.math.argmax(self._q_values(state)))
 
   def action(self, state):
     return self._random_action() if random.random() <= EPSILON else self._optimal_action(state)
 
-  def _max_score(self, state):
-    return float(tf.math.reduce_max(self._scores(state)))
+  def _max_q_value(self, state):
+    return float(tf.math.reduce_max(self._q_values(state)))
+
+  def _max_rewards(self, transition):
+    s, a, r, ns, done = transition 
+    if done:
+      return r
+    return r + GAMMA * self._max_q_value(ns)
+
+  def _loss(self, transition):
+    s, a, r, ns, done = transition 
+    return (self._max_rewards(transition) - self._q_values(s)[a]) ** 2
 
   def optimize(self, transitions):
-    pass
+    with tf.GradientTape() as g:
+      loss = tf.math.reduce_sum([self._loss(t) for t in transitions])
+    w = self._Q.trainable_weights
+    grads = g.gradient(loss, w)
+    self._optimizer.apply_gradients(zip(grads, w))
 
 
 class Memory:

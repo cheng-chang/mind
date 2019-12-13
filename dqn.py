@@ -39,10 +39,13 @@ class DQN:
   def _q_values(self, state):
     """Compute a forward pass of state through the Q network.
 
+    Args:
+      state is returned by Trajector.state().
+
     Returns:
-      a Tensor with Q values (scores) for each action, tensor shape is (1, 4)
+      a Tensor with Q values (scores) for each action, tensor shape is (4, )
     """
-    return self._Q.predict(np.array([state]))[0]
+    return self._Q(np.array([state]))[0]
 
   def _random_action(self):
     return int(random.random() * ACTIONS)

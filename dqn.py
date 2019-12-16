@@ -1,4 +1,5 @@
 import random
+from datetime import datetime
 
 import numpy as np
 import gym
@@ -9,28 +10,31 @@ from tqdm import tqdm
 
 
 EPOCHS = 100
-EPOCH_STEPS = 100
-EPSILON = 0.2
+EPOCH_STEPS = 10000
+EPSILON = 0.05
 GAMMA = 0.01
 RAW_IMAGE_SHAPE = (210, 160, 3)
-PREPROCESSED_IMAGE_SHAPE = (110, 84)
+#PREPROCESSED_IMAGE_SHAPE = (84, 84)
+PREPROCESSED_IMAGE_SHAPE = (28, 28)
 DQN_INPUT_SHAPE = (*PREPROCESSED_IMAGE_SHAPE, 4)
 MEMORY_SIZE = 1000
 SAMPLE_SIZE = 50
 ACTIONS = 4
 SGD_LEARNING_RATE = 1e-3
+LOG_DIR="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+TENSORBOARD_CALLBACK = keras.callbacks.TensorBoard(log_dir=LOG_DIR, histogram_freq=1, profile_batch = 3)
 
 
 class DQN:
   def __init__(self):
-    self._Q = self._build_dqn()
+    self._Q = self._build_model()
     self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
 
-  def _build_dqn(self):
+  def _build_model(self):
     """Build the Deep-Q-Network."""
     Q = keras.Sequential()
-    Q.add(layers.Conv2D(16, (8, 8), 4, activation='relu', input_shape=DQN_INPUT_SHAPE))
-    Q.add(layers.Conv2D(32, (4, 4), 2, activation='relu'))
+    Q.add(layers.Conv2D(16, 8, 4, activation='relu', input_shape=DQN_INPUT_SHAPE))
+    Q.add(layers.Conv2D(32, 4, 2, activation='relu'))
     Q.add(layers.Flatten())
     Q.add(layers.Dense(256, activation='relu'))
     Q.add(layers.Dense(ACTIONS))
@@ -40,11 +44,13 @@ class DQN:
     """Compute a forward pass of state through the Q network.
 
     Args:
-      state is returned by Trajector.state().
+      state is returned by Trajectory.state().
 
     Returns:
       a Tensor with Q values (scores) for each action, tensor shape is (4, )
     """
+    #return self._Q.predict(np.array([state]), callbacks=[TENSORBOARD_CALLBACK])[0]
+    #return self._Q.predict(np.array([state]))[0]
     return self._Q(np.array([state]))[0]
 
   def _random_action(self):

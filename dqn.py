@@ -16,30 +16,43 @@ GAMMA = 0.01
 RAW_IMAGE_SHAPE = (210, 160, 3)
 #PREPROCESSED_IMAGE_SHAPE = (84, 84)
 PREPROCESSED_IMAGE_SHAPE = (28, 28)
-DQN_INPUT_SHAPE = (*PREPROCESSED_IMAGE_SHAPE, 4)
+#DQN_INPUT_SHAPE = (*PREPROCESSED_IMAGE_SHAPE, 4)
+RAW_STATE_SHAPE = 4
+DQN_INPUT_SHAPE = (RAW_STATE_SHAPE, 4)
 MEMORY_SIZE = 1000
 SAMPLE_SIZE = 50
-ACTIONS = 4
+#ACTIONS = 4
+ACTIONS = 2
 SGD_LEARNING_RATE = 1e-3
 LOG_DIR="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
 TENSORBOARD_CALLBACK = keras.callbacks.TensorBoard(log_dir=LOG_DIR, histogram_freq=1, profile_batch = 3)
 
 
+def image_model():
+  """Build the Deep-Q-Network for raw image inputs."""
+  Q = keras.Sequential()
+  Q.add(layers.Conv2D(16, 8, 4, activation='relu', input_shape=DQN_INPUT_SHAPE))
+  Q.add(layers.Conv2D(32, 4, 2, activation='relu'))
+  Q.add(layers.Flatten())
+  Q.add(layers.Dense(256, activation='relu'))
+  Q.add(layers.Dense(ACTIONS))
+  return Q
+
+
+def vector_model():
+  """Build the Deep-Q-Network for vector inputs."""
+  return keras.Sequential([
+    layers.Flatten(input_shape=DQN_INPUT_SHAPE),
+    layers.Dense(128, activation='relu'),
+    layers.Dense(ACTIONS)
+  ])
+
+
 class DQN:
-  def __init__(self):
-    self._Q = self._build_model()
+  def __init__(self, model):
+    self._Q = model
     self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
 
-  def _build_model(self):
-    """Build the Deep-Q-Network."""
-    Q = keras.Sequential()
-    Q.add(layers.Conv2D(16, 8, 4, activation='relu', input_shape=DQN_INPUT_SHAPE))
-    Q.add(layers.Conv2D(32, 4, 2, activation='relu'))
-    Q.add(layers.Flatten())
-    Q.add(layers.Dense(256, activation='relu'))
-    Q.add(layers.Dense(ACTIONS))
-    return Q
-  
   def _q_values(self, state):
     """Compute a forward pass of state through the Q network.
 
@@ -162,6 +175,9 @@ class Trajectory:
       return arr
     return [np.zeros(shape)] * (length - len(arr)) + arr
 
+  def _last_states(self):
+    return self._traj[::2][-4:]
+
   def state(self):
     """Preprocess the last 4 raw images to a state.
 
@@ -169,13 +185,15 @@ class Trajectory:
     then stack the 4 matrices together in increasing time order.
     return Tensor with shape DQN_INPUT_SHAPE.
     """
-    last_4_images = self._left_zero_padding(self._traj[::2][-4:], 4, RAW_IMAGE_SHAPE)
-    return tf.stack([self._preprocess_raw_image(img).numpy() for img in last_4_images], 2)
+    #last_4_images = self._left_zero_padding(self._last_states(), 4, RAW_IMAGE_SHAPE)
+    #return tf.stack([self._preprocess_raw_image(img).numpy() for img in last_4_images], 2)
+    return tf.stack(self._left_zero_padding(self._last_states(), 4, RAW_STATE_SHAPE))
 
 
 def train():
-  env = gym.make('Breakout-v0')
-  Q = DQN()
+  #env = gym.make('Breakout-v0')
+  env = gym.make('CartPole-v0')
+  Q = DQN(vector_model())
   memory = Memory(MEMORY_SIZE)
   for epoch in range(EPOCHS):
     print('Epoch {} / {}'.format(epoch, EPOCHS))

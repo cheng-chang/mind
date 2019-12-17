@@ -123,15 +123,10 @@ class Memory:
 
     The batch size is min(size, memory size).
     """
-    random.shuffle(self._memory)
-    return self._memory[:size]
+    return random.choices(self._memory, k=size)
 
   def _evict(self):
-    """Evict a transition when memory is full.
-
-    If sample is never called, then evicts the oldest transition.
-    If sample is ever called, then the first transition is a random one.
-    """
+    """Evict the oldest transition."""
     self._memory.pop(0)
 
 

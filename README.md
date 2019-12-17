@@ -14,6 +14,6 @@
 
 ## How to store memory
 
-## How to index and search for specific memory
+## How to index and search memory
 
 ## How to imagine

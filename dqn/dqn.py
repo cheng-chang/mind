@@ -264,8 +264,7 @@ class Trajectory:
     return tf.stack([self._env.preprocess_state(s) for s in states], -1)
 
 
-def train():
-  env = CartPoleEnv()
+def train(env):
   Q = DQN(build_model(env))
   memory = Memory(MEMORY_SIZE)
   total_steps = 0
@@ -293,8 +292,11 @@ def train():
     total_steps += steps
     print('time = {}, steps = {}, rewards = {}, total steps = {}'.format(timestamp(), steps, rewards, total_steps))
     os.sys.stdout.flush()
-  env.close()
 
 
 if __name__ == '__main__':
-  train()
+  env = CartPoleEnv()
+  try:
+    train(env)
+  finally:
+    env.close()

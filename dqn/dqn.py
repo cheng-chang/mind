@@ -53,7 +53,8 @@ def vector_model():
 class DQN:
   def __init__(self, model):
     self._Q = model
-    self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
+    #self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
+    self._optimizer = keras.optimizers.Adam()
     self._epsilon = EPSILON_MAX
 
   def reduce_epsilon(self):

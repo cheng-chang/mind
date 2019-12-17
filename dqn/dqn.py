@@ -32,8 +32,6 @@ class GymEnv:
     self._name = name
     self._env = gym.make(name)
     self._state_shape = self._env.reset().shape
-    if len(self._state_shape) == 1:
-      self._state_shape = self._state_shape[0]
 
   def name(self):
     return self._name
@@ -134,10 +132,11 @@ def vector_model(input_shape, output_shape):
 
 def build_model(env):
   state_shape = env.state_shape()
-  action_shape = env.action_shape()
-  if type(state_shape) == int:
-    return vector_model((state_shape, HORIZON_SIZE), action_shape)
-  return image_model((*state_shape, HORIZON_SIZE), action_shape)
+  input_shape = (*state_shape, HORIZON_SIZE)
+  output_shape = env.action_shape()
+  if len(state_shape) == 1:
+    return vector_model(input_shape, output_shape)
+  return image_model(input_shape, output_shape)
 
 
 class DQN:

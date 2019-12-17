@@ -34,13 +34,13 @@ LOG_DIR="logs/profile/" + timestamp()
 TENSORBOARD_CALLBACK = keras.callbacks.TensorBoard(log_dir=LOG_DIR, histogram_freq=1, profile_batch = 3)
 
 
-class ExplorationRatio:
+class ExplorationRate:
   """When a random value between [0, 1] is <= this ratio, take random actions."""
   def value(self, total_steps):
     raise NotImplementedError()
 
 
-class LinearExplorationRatio(ExplorationRatio):
+class LinearExplorationRate(ExplorationRate):
   def __init__(self, max_value, min_value, steps):
     """Decay epsilon linearly from max_value to min_value in the specified number of steps."""
     self._max = max_value
@@ -217,7 +217,7 @@ def train():
   Q = DQN(vector_model())
   memory = Memory(MEMORY_SIZE)
   total_steps = 0
-  eps = LinearExplorationRatio(EPSILON_MAX, EPSILON_MIN, MEMORY_SIZE)
+  eps = LinearExplorationRate(EPSILON_MAX, EPSILON_MIN, MEMORY_SIZE)
   for epoch in range(1, EPOCHS + 1):
     print('Epoch {} / {}'.format(epoch, EPOCHS))
     rewards = 0

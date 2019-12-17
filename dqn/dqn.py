@@ -12,6 +12,8 @@ from tqdm import tqdm
 EPOCHS = 100
 EPOCH_STEPS = 10000
 EPSILON = 0.05
+EPSILON_MAX = 1
+EPSILON_MIN = 0.1
 GAMMA = 0.01
 RAW_IMAGE_SHAPE = (210, 160, 3)
 #PREPROCESSED_IMAGE_SHAPE = (84, 84)
@@ -52,6 +54,11 @@ class DQN:
   def __init__(self, model):
     self._Q = model
     self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
+    self._epsilon = EPSILON_MAX
+
+  def reduce_epsilon(self):
+    if self._epsilon > EPSILON_MIN:
+      self._epsilon -= 0.001
 
   def _q_values(self, state):
     """Compute a forward pass of state through the Q network.
@@ -73,7 +80,7 @@ class DQN:
     return int(tf.math.argmax(self._q_values(state)))
 
   def action(self, state):
-    return self._random_action() if random.random() <= EPSILON else self._optimal_action(state)
+    return self._random_action() if random.random() <= self._epsilon else self._optimal_action(state)
 
   def _max_q_value(self, state):
     return float(tf.math.reduce_max(self._q_values(state)))
@@ -205,6 +212,7 @@ def train():
       memory.add(s, a, r, traj.state(), done)
       Q.optimize(memory.sample(SAMPLE_SIZE))
       if done:
+        Q.reduce_epsilon()
         break
     print('steps = {}, rewards = {}'.format(steps, rewards))
   env.close()

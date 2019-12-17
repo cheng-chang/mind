@@ -1,3 +1,4 @@
+import os
 import random
 from datetime import datetime
 
@@ -9,25 +10,45 @@ from tensorflow.keras import layers
 from tqdm import tqdm
 
 
-EPOCHS = 100
+def timestamp():
+  return datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+EPOCHS = 1000000
 EPOCH_STEPS = 10000
-EPSILON = 0.05
+MEMORY_SIZE = 100000
 EPSILON_MAX = 1
 EPSILON_MIN = 0.1
-GAMMA = 0.01
+GAMMA = 0.99
 RAW_IMAGE_SHAPE = (210, 160, 3)
 #PREPROCESSED_IMAGE_SHAPE = (84, 84)
 PREPROCESSED_IMAGE_SHAPE = (28, 28)
 #DQN_INPUT_SHAPE = (*PREPROCESSED_IMAGE_SHAPE, 4)
 RAW_STATE_SHAPE = 4
 DQN_INPUT_SHAPE = (RAW_STATE_SHAPE, 4)
-MEMORY_SIZE = 1000
-SAMPLE_SIZE = 50
+SAMPLE_SIZE = 32
 #ACTIONS = 4
 ACTIONS = 2
 SGD_LEARNING_RATE = 1e-3
-LOG_DIR="logs/profile/" + datetime.now().strftime("%Y%m%d-%H%M%S")
+LOG_DIR="logs/profile/" + timestamp()
 TENSORBOARD_CALLBACK = keras.callbacks.TensorBoard(log_dir=LOG_DIR, histogram_freq=1, profile_batch = 3)
+
+
+class ExplorationRatio:
+  """When a random value between [0, 1] is <= this ratio, take random actions."""
+  def value(self, total_steps):
+    raise NotImplementedError()
+
+
+class LinearExplorationRatio(ExplorationRatio):
+  def __init__(self, max_value, min_value, steps):
+    """Decay epsilon linearly from max_value to min_value in the specified number of steps."""
+    self._max = max_value
+    self._min = min_value
+    self._decay_per_step = (max_value - min_value) / steps
+  
+  def value(self, total_steps):
+    return self._max - self._decay_per_step * total_steps
 
 
 def image_model():
@@ -45,9 +66,14 @@ def vector_model():
   """Build the Deep-Q-Network for vector inputs."""
   return keras.Sequential([
     layers.Flatten(input_shape=DQN_INPUT_SHAPE),
+    layers.Dense(256, activation='relu'),
     layers.Dense(128, activation='relu'),
     layers.Dense(ACTIONS)
   ])
+
+
+def random_action():
+  return int(random.random() * ACTIONS)
 
 
 class DQN:
@@ -55,11 +81,6 @@ class DQN:
     self._Q = model
     #self._optimizer = keras.optimizers.SGD(learning_rate=SGD_LEARNING_RATE)
     self._optimizer = keras.optimizers.Adam()
-    self._epsilon = EPSILON_MAX
-
-  def reduce_epsilon(self):
-    if self._epsilon > EPSILON_MIN:
-      self._epsilon -= 0.001
 
   def _q_values(self, state):
     """Compute a forward pass of state through the Q network.
@@ -74,14 +95,8 @@ class DQN:
     #return self._Q.predict(np.array([state]))[0]
     return self._Q(np.array([state]))[0]
 
-  def _random_action(self):
-    return int(random.random() * ACTIONS)
-
-  def _optimal_action(self, state):
-    return int(tf.math.argmax(self._q_values(state)))
-
   def action(self, state):
-    return self._random_action() if random.random() <= self._epsilon else self._optimal_action(state)
+    return int(tf.math.argmax(self._q_values(state)))
 
   def _max_q_value(self, state):
     return float(tf.math.reduce_max(self._q_values(state)))
@@ -132,6 +147,9 @@ class Memory:
     The batch size is min(size, memory size).
     """
     return random.choices(self._memory, k=size)
+
+  def size(self):
+    return len(self._memory)
 
   def _evict(self):
     """Evict the oldest transition."""
@@ -198,24 +216,32 @@ def train():
   env = gym.make('CartPole-v0')
   Q = DQN(vector_model())
   memory = Memory(MEMORY_SIZE)
-  for epoch in range(EPOCHS):
+  total_steps = 0
+  eps = LinearExplorationRatio(EPSILON_MAX, EPSILON_MIN, MEMORY_SIZE)
+  for epoch in range(1, EPOCHS + 1):
     print('Epoch {} / {}'.format(epoch, EPOCHS))
     rewards = 0
     steps = 0
     traj = Trajectory(env.reset())
-    for step in tqdm(range(EPOCH_STEPS)):
+    #for step in tqdm(range(EPOCH_STEPS)):
+    for step in range(EPOCH_STEPS):
       s = traj.state()
-      a = Q.action(s)
+      if random.random() <= eps.value(total_steps):
+        a = random_action()
+      else:
+        a = Q.action(s)
       x, r, done, _ = env.step(a)
       steps += 1
       rewards += r
       traj.add(a, x)
       memory.add(s, a, r, traj.state(), done)
-      Q.optimize(memory.sample(SAMPLE_SIZE))
+      if memory.size() > SAMPLE_SIZE:
+        Q.optimize(memory.sample(SAMPLE_SIZE))
       if done:
-        Q.reduce_epsilon()
         break
-    print('steps = {}, rewards = {}'.format(steps, rewards))
+    total_steps += steps
+    print('time = {}, steps = {}, rewards = {}, total steps = {}'.format(timestamp(), steps, rewards, total_steps))
+    os.sys.stdout.flush()
   env.close()
 
 

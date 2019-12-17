@@ -259,7 +259,7 @@ class Trajectory:
     Returns:
       Tensor of shape (*state_shape, HORIZON_SIZE)
     """
-    states = Trajectory._left_zero_padding(self._horizon(), HORIZON_SIZE, self._env.state_shape())
+    states = self._left_zero_padding(self._horizon(), HORIZON_SIZE, self._env.state_shape())
     return tf.stack([self._env.preprocess_state(s) for s in states], -1)
 
 

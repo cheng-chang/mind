@@ -6,11 +6,11 @@
 
 #### Model free
 
-- [DQN](dqn/dqn.pdf)
+- [DQN](papers/dqn.pdf)
 
 #### Model based
 
-- [MuZero](https://arxiv.org/pdf/1911.08265.pdf)
+- [MuZero](papers/muzero.pdf)
 
 ## How to store memory
 

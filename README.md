@@ -14,11 +14,11 @@
 
 #### Model free
 
-- [DQN](papers/dqn.pdf)
+- [DQN](dqn/)
 
 #### Model based
 
-- [MuZero](papers/muzero.pdf)
+- [MuZero](muzero/)
 
 ## How to store, index, and search memory
 

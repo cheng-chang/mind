@@ -2,6 +2,14 @@
 
 ## How to make decisions
 
+### Classic control
+
+#### LQR (Linear-quadratic regulator)
+
+#### MPC (Model predictive control)
+
+### Multi-armed bandit
+
 ### Reinforcement learning
 
 #### Model free
@@ -12,8 +20,6 @@
 
 - [MuZero](papers/muzero.pdf)
 
-## How to store memory
-
-## How to index and search memory
+## How to store, index, and search memory
 
 ## How to imagine

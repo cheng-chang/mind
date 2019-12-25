@@ -68,7 +68,11 @@ class Memory:
   def store(self, trajectory):
     pass
 
+  def size(self):
+    pass
+
   def sample(self, batch_size):
+    assert(self.size() >= batch_size)
     pass
 
 
@@ -106,8 +110,9 @@ def play(env, planner, memory):
 def train(env, muzero, planner, memory):
   actors = ThreadActors(ACTORS, play, (env, planner, memory))
   actors.run()
-  trajectories = memory.sample(BATCH_SIZE)
-  muzero.train(trajectories)
+  if memory.size() >= BATCH_SIZE:
+    trajectories = memory.sample(BATCH_SIZE)
+    muzero.train(trajectories)
 
 
 if __name__ == '__main__':

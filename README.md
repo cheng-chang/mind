@@ -4,9 +4,8 @@
 
 ### Classic control
 
-#### LQR (Linear-quadratic regulator)
-
-#### MPC (Model predictive control)
+- LQR (Linear-quadratic regulator)
+- MPC (Model predictive control)
 
 ### Multi-armed bandit
 

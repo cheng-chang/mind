@@ -1,4 +1,5 @@
 import threading
+import math
 
 from tqdm import tqdm
 import gym
@@ -10,6 +11,9 @@ EPOCHS = int(1e6)
 EPOCH_STEPS = 100
 ACTORS = 10
 BATCH_SIZE = 64
+ACTIONS = 2
+ROOT_PRIOR_NOISE_DIRICHLET_ALPHA = 0.03
+ROOT_PRIOR_NOISE_FRACTION = 0.25
 
 
 class RepresentationNet:
@@ -33,6 +37,41 @@ class Planner:
   def plan(self, state):
     """Plan the possible future trajectories from raw state and return the action to take."""
     raise NotImplementedError()
+
+
+class ActionStats:
+  def __init__(self, prior):
+    self._visit_count = 0
+    self._q_value_sum = 0
+    self._prior = prior
+
+  def update(self, q_value):
+    self._visit_count += 1
+    self._q_value_sum += q_value
+
+
+class Node:
+  def __init__(self, parent, state, reward, policy, q_value):
+    self._parent = parent
+    self._state = state
+    self._reward = reward
+    prior = self._compute_action_prior(policy, parent is None)
+    self._action_stats = {a: ActionStats(prior[a]) for a in ACTIONS}
+    self._children = {}
+
+  @staticmethod
+  def _compute_action_prior(policy, should_add_noise):
+    policy = {a: math.exp(policy[a]) for a in ACTIONS}
+    policy_sum = sum(policy.values())
+    prior = {a: policy[a] / policy_sum for a in ACTIONS}
+    if should_add_noise:
+      noise = np.random.dirichlet([ROOT_PRIOR_NOISE_DIRICHLET_ALPHA] * ACTIONS)
+      frac = ROOT_PRIOR_NOISE_FRACTION
+      prior = {a: (frac * noise[a] + (1 - frac) * prior[a]) for a in ACTIONS}
+    return prior
+
+  def is_leaf(self):
+    return len(self._children) == 0
 
 
 class MonteCarloTreeSearch(Planner):
@@ -123,6 +162,6 @@ if __name__ == '__main__':
   try:
     for epoch in range(EPOCHS):
       print('Epoch ' + epoch)
-      train(env, muzero, memory)
+      train(env, muzero, planner, memory)
   finally:
     env.close()

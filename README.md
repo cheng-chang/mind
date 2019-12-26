@@ -1,4 +1,4 @@
-# Understand human mind through code
+# How does human mind work?
 
 ## How to make decisions
 

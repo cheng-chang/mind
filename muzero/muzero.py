@@ -122,6 +122,10 @@ class Node:
   def state(self):
     return self._state
 
+  def choose_action(self):
+    _, a = max((self._upper_confidence_bound(a), a) for a in ACTIONS)
+    return a
+
   def _upper_confidence_bound(self, action):
     stats = self._action_stats
     stat = stats[action]
@@ -137,10 +141,6 @@ class Node:
     value_score = self._minmax.normalize(stat.q_value())
 
     return value_score + prior_score
-
-  def choose_action(self):
-    _, a = max((self._upper_confidence_bound(a), a) for a in ACTIONS)
-    return a
 
   def has_child(self, action):
     return action in self._children
@@ -175,7 +175,6 @@ class MonteCarloTreeSearch(Planner):
     root = Node(output)
     for _ in range(PLAN_STEPS):
       self._plan(root)
-
     return self._choose_action(root)
 
   def _plan(self, root):
@@ -190,6 +189,14 @@ class MonteCarloTreeSearch(Planner):
     output = self._muzero.transit(node.state(), action)
     node.add_child(action, output)
 
+  def _choose_action(self, root):
+    visit_counts = root.visit_counts()
+    actions = visit_counts.keys()
+    counts = np.array([visit_counts[a] for a in actions])
+    t = self._visit_count_temperature()
+    idx = self._sample_index(counts, t)
+    return actions[idx]
+
   def _visit_count_temperature(self):
     steps = self._muzero.training_steps()
     if steps <= 5e5:
@@ -203,14 +210,6 @@ class MonteCarloTreeSearch(Planner):
     counts = counts ** (1 / temperature)
     probs = counts / sum(counts)
     return np.random.choice(len(counts), p=probs)
-
-  def _choose_action(self, root):
-    visit_counts = root.visit_counts()
-    actions = visit_counts.keys()
-    counts = np.array([visit_counts[a] for a in actions])
-    t = self._visit_count_temperature()
-    idx = self._sample_index(counts, t)
-    return actions[idx]
 
 
 class Trajectory:

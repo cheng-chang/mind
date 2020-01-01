@@ -23,8 +23,6 @@ MEMORY_SIZE = 100000
 SAMPLE_SIZE = 32
 # How many most recent consequent raw states to consider as one processed state
 HORIZON_SIZE = 4
-LOG_DIR="logs/dqn/" + timestamp()
-TENSORBOARD_CALLBACK = keras.callbacks.TensorBoard(log_dir=LOG_DIR, histogram_freq=1, profile_batch = 3)
 
 
 class GymEnv:

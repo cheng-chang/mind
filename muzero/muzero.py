@@ -4,8 +4,10 @@ import typing
 
 from tqdm import tqdm
 import gym
-import tensorflow as tf
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 FLOAT_MAX = float('inf')
@@ -21,25 +23,87 @@ UPPER_CONFIDENCE_BOUND_C1 = 1.25
 UPPER_CONFIDENCE_BOUND_C2 = 19652
 DISCOUNT = 0.997
 
-
-class RepresentationNet:
-  pass
-
-
-class DynamicsNet:
-  pass
+RAW_STATE_SIZE = 4
+HIDDEN_NEURON_SIZE = 64
+HIDDEN_STATE_SIZE = 4
 
 
-class PredictionNet:
-  pass
+class RepresentationNet(nn.Module):
+  def __init__(self):
+    self.fc1 = nn.Linear(RAW_STATE_SIZE, HIDDEN_NEURON_SIZE)
+    self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, HIDDEN_STATE_SIZE)
+
+  def forward(self, x):
+    x = F.relu(self.fc1(x))
+    x = F.tanh(self.fc2(x))
+    return x
+
+
+class DynamicsNet(nn.Module):
+  def __init__(self):
+    self.fc1 = nn.Linear(HIDDEN_STATE_SIZE + 1, HIDDEN_NEURON_SIZE)
+    self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, HIDDEN_STATE_SIZE)
+
+  def forward(self, x):
+    x = F.relu(self.fc1(x))
+    x = F.tanh(self.fc2(x))
+    return x
+
+
+class RewardNet(nn.Module):
+  def __init__(self):
+    self.fc1 = nn.Linear(HIDDEN_STATE_SIZE + 1, HIDDEN_NEURON_SIZE)
+    self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, 1)
+
+  def forward(self, x):
+    x = F.relu(self.fc1(x))
+    x = self.fc2(x)
+    return x
+
+
+class PolicyNet(nn.Module):
+  def __init__(self):
+    self.fc1 = nn.Linear(HIDDEN_STATE_SIZE, HIDDEN_NEURON_SIZE)
+    self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, ACTIONS)
+
+  def forward(self, x):
+    x = F.relu(self.fc1(x))
+    x = F.softmax(self.fc2(x))
+    return x
+
+
+class ValueNet(nn.Module):
+  def __init__(self):
+    self.fc1 = nn.Linear(HIDDEN_STATE_SIZE, HIDDEN_NEURON_SIZE)
+    self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, 1)
+
+  def forward(self, x):
+    x = F.relu(self.fc1(x))
+    x = self.fc2(x)
+    return x
 
 
 class MuZeroNet:
+  def __init__(self):
+    self._representation_net = RepresentationNet()
+    self._dynamics_net = DynamicsNet()
+    self._reward_net = RewardNet()
+    self._policy_net = PolicyNet()
+    self._value_net = ValueNet()
+
   def represent(self, raw_state) -> MuZeroNetOutput:
-    pass
+    state = self._representation_net(raw_state)
+    policy = self._policy_net(state)
+    value = self._value_net(state)
+    return MuZeroNetOutput(state, 0, policy, value)
 
   def transit(self, state, action) -> MuZeroNetOutput:
-    pass
+    state_action = np.append(state, action)
+    next_state = self._dynamics_net(state_action)
+    reward = self._reward_net(state_action)
+    policy = self._policy_net(next_state)
+    value = self._value_net(next_state)
+    return MuZeroNetOutput(next_state, reward, policy, value)
 
   def train(self, trajectories):
     pass

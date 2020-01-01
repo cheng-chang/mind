@@ -58,7 +58,7 @@ class MuZeroNetOutput(typing.NamedTuple):
 class Planner:
   def plan(self, state):
     """Plan the possible future trajectories from raw state and return the action to take."""
-    raise NotImplementedError()
+    raise NotImplementedError
 
 
 class ActionStats:
@@ -254,7 +254,7 @@ class Memory:
 
 class Actors:
   def run(self):
-    raise NotImplementedError()
+    raise NotImplementedError
 
 
 class ThreadActors(Actors):

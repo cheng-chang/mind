@@ -60,7 +60,7 @@ class GymEnv:
     Returns:
       numpy ndarray
     """
-    raise NotImplementedError()
+    raise NotImplementedError
 
 
 class CartPoleEnv(GymEnv):
@@ -95,7 +95,7 @@ class BreakoutEnv(GymEnv):
 class ExplorationRate:
   """When a random value between [0, 1] is <= this ratio, take random actions."""
   def value(self, total_steps):
-    raise NotImplementedError()
+    raise NotImplementedError
 
 
 class LinearExplorationRate(ExplorationRate):
@@ -104,7 +104,7 @@ class LinearExplorationRate(ExplorationRate):
     self._max = max_value
     self._min = min_value
     self._decay_per_step = (max_value - min_value) / steps
-  
+
   def value(self, total_steps):
     return self._max - self._decay_per_step * total_steps
 
@@ -162,13 +162,13 @@ class DQN:
     return float(tf.math.reduce_max(self._q_values(state)))
 
   def _max_rewards(self, transition):
-    s, a, r, ns, done = transition 
+    s, a, r, ns, done = transition
     if done:
       return r
     return r + GAMMA * self._max_q_value(ns)
 
   def _loss(self, transition):
-    s, a, r, ns, done = transition 
+    s, a, r, ns, done = transition
     return (self._max_rewards(transition) - self._q_values(s)[a]) ** 2
 
   def optimize(self, transitions):
@@ -181,7 +181,7 @@ class DQN:
 
 class Memory:
   """Memory of transitions.
-  
+
   Each transition is (state, action, reward, next_state, done).
   state is defined by Trajectory.state().
 

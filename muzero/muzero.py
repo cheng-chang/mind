@@ -114,10 +114,14 @@ class Node:
     policy_sum = sum(policy.values())
     prior = {a: policy[a] / policy_sum for a in ACTIONS}
     if should_add_noise:
-      noise = np.random.dirichlet([ROOT_PRIOR_NOISE_DIRICHLET_ALPHA] * ACTIONS)
-      frac = ROOT_PRIOR_NOISE_FRACTION
-      prior = {a: (frac * noise[a] + (1 - frac) * prior[a]) for a in ACTIONS}
+      prior = Node._add_dirichlet_prior_noise(prior)
     return prior
+
+  @staticmethod
+  def _add_dirichlet_prior_noise(prior):
+    noise = np.random.dirichlet([ROOT_PRIOR_NOISE_DIRICHLET_ALPHA] * ACTIONS)
+    frac = ROOT_PRIOR_NOISE_FRACTION
+    return {a: (frac * noise[a] + (1 - frac) * prior[a]) for a in ACTIONS}
 
   def state(self):
     return self._state

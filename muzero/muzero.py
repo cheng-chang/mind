@@ -32,7 +32,7 @@ HIDDEN_STATE_SIZE = 4
 
 # training parameters
 UNROLLED_STEPS = 5
-DISCOUNTED_VALUE_SUM_STEPS = 10
+DISCOUNTED_VALUE_STEPS = 10
 LEARNING_RATE_BASE = 0.05
 LEARNING_RATE_DECAY_STEPS = 350e3
 LEARNING_RATE_DECAY_RATE = 0.1
@@ -422,22 +422,49 @@ class Trajectory:
     """
     start_index = self._sample_start_index()
     end_index = start_index + unrolled_steps
-
+    # actions, rewards: [start_index, end_index)
+    # policies, values: [start_index, end_index]
     observation = self._observations[start_index]
-    actions = np.array(self._actions[start_index : end_index], dtype=np.float)
-    rewards = np.array(self._rewards[start_index : end_index], dtype=np.float)
-    for _ in range(end_index - self._max_sample_size()):
+    actions = np.array(self._actions[start_index : end_index + 1], dtype=np.float)
+    rewards = np.array(self._rewards[start_index : end_index + 1], dtype=np.float)
+    policies = np.array(self._policies[start_index : end_index + 1], dtype=np.float)
+    for _ in range(end_index + 1 - self._max_sample_size()):
       actions = np.append(actions, np.random.choice(range(ACTIONS)))
       rewards = np.append(rewards, 0)
-
-    end_index += 1
-    policies = np.array(self._policies[start_index : end_index], dtype=np.float)
-    values = np.array(self._values[start_index : end_index], dtype=np.float)
-    for _ in range(end_index - self._max_sample_size()):
       policies = np.append(policies, [np.zeros(policies[0].shape)], axis=0)
-      values = np.append(values, 0)
-
+    actions = actions[:-1]
+    rewards = rewards[:-1]
+    values = self._discounted_values(start_index, end_index)
     return (observation, actions, rewards, policies, values)
+
+  def _discounted_values(self, start_index, end_index):
+    i = end_index + DISCOUNTED_VALUE_STEPS
+    value = self._value(i)
+    i -= 1
+    while i >= end_index:
+      value = self._reward(i) + DISCOUNT * value
+      i -= 1
+    values = [value]
+
+    value_frac = DISCOUNT ** DISCOUNTED_VALUE_STEPS
+    last_reward_frac = value_frac / DISCOUNT
+    while i >= start_index:
+      last_i = i + DISCOUNTED_VALUE_STEPS + 1
+      value -= value_frac * self._value(last_i)
+      value -= last_reward_frac * self._reward(last_i - 1)
+      value *= DISCOUNT
+      value += value_frac * self._value(last_i - 1)
+      value += self._reward(i)
+      i -= 1
+      values.append(value)
+    values.reverse()
+    return np.array(values, dtype=np.float)
+
+  def _value(self, idx):
+    return self._values[idx] if idx < len(self._values) else 0
+
+  def _reward(self, idx):
+    return self._rewards[idx] if idx < len(self._rewards) else 0
 
 
 class Memory:

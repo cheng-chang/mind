@@ -1,3 +1,4 @@
+from datetime import datetime
 import threading
 import math
 import typing
@@ -8,13 +9,14 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import torch.optim as optim
 
 
 FLOAT_MAX = float('inf')
 EPOCHS = int(1e6)
 EPOCH_STEPS = 200
 PLAN_STEPS = 80
-ACTORS = 10
+ACTORS = 1
 MEMORY_SIZE = int(1e6)
 BATCH_SIZE = 64
 ACTIONS = 2
@@ -24,38 +26,51 @@ UPPER_CONFIDENCE_BOUND_C1 = 1.25
 UPPER_CONFIDENCE_BOUND_C2 = 19652
 DISCOUNT = 0.997
 
-RAW_STATE_SIZE = 4
+OBSERVATION_SIZE = 4
 HIDDEN_NEURON_SIZE = 64
 HIDDEN_STATE_SIZE = 4
 
 # training parameters
 UNROLLED_STEPS = 5
+DISCOUNTED_VALUE_SUM_STEPS = 10
+LEARNING_RATE_BASE = 0.05
+LEARNING_RATE_DECAY_STEPS = 350e3
+LEARNING_RATE_DECAY_RATE = 0.1
+CHECKPOINT_INTERVAL = int(1e3)
+L2_REGULARIZER_WEIGHT = 1e-4
+
+
+def timestamp():
+  return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
 class RepresentationNet(nn.Module):
   def __init__(self):
-    self.fc1 = nn.Linear(RAW_STATE_SIZE, HIDDEN_NEURON_SIZE)
+    super().__init__()
+    self.fc1 = nn.Linear(OBSERVATION_SIZE, HIDDEN_NEURON_SIZE)
     self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, HIDDEN_STATE_SIZE)
 
   def forward(self, x):
     x = F.relu(self.fc1(x))
-    x = F.tanh(self.fc2(x))
+    x = torch.tanh(self.fc2(x))
     return x
 
 
 class DynamicsNet(nn.Module):
   def __init__(self):
+    super().__init__()
     self.fc1 = nn.Linear(HIDDEN_STATE_SIZE + 1, HIDDEN_NEURON_SIZE)
     self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, HIDDEN_STATE_SIZE)
 
   def forward(self, x):
     x = F.relu(self.fc1(x))
-    x = F.tanh(self.fc2(x))
+    x = torch.tanh(self.fc2(x))
     return x
 
 
 class RewardNet(nn.Module):
   def __init__(self):
+    super().__init__()
     self.fc1 = nn.Linear(HIDDEN_STATE_SIZE + 1, HIDDEN_NEURON_SIZE)
     self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, 1)
 
@@ -67,6 +82,7 @@ class RewardNet(nn.Module):
 
 class PolicyNet(nn.Module):
   def __init__(self):
+    super().__init__()
     self.fc1 = nn.Linear(HIDDEN_STATE_SIZE, HIDDEN_NEURON_SIZE)
     self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, ACTIONS)
 
@@ -78,6 +94,7 @@ class PolicyNet(nn.Module):
 
 class ValueNet(nn.Module):
   def __init__(self):
+    super().__init__()
     self.fc1 = nn.Linear(HIDDEN_STATE_SIZE, HIDDEN_NEURON_SIZE)
     self.fc2 = nn.Linear(HIDDEN_NEURON_SIZE, 1)
 
@@ -87,6 +104,13 @@ class ValueNet(nn.Module):
     return x
 
 
+class MuZeroNetOutput(typing.NamedTuple):
+  state: torch.Tensor
+  reward: torch.Tensor
+  policy_logits: torch.Tensor
+  value: torch.Tensor
+
+
 class MuZeroNet:
   def __init__(self):
     self._representation_net = RepresentationNet()
@@ -94,40 +118,94 @@ class MuZeroNet:
     self._reward_net = RewardNet()
     self._policy_net = PolicyNet()
     self._value_net = ValueNet()
-    self._training_steps = 0
+    params = list(self._representation_net.parameters()) + \
+      list(self._dynamics_net.parameters()) + \
+      list(self._reward_net.parameters()) + \
+      list(self._policy_net.parameters()) + \
+      list(self._value_net.parameters())
+    self._optimizer = optim.Adam(params, lr=LEARNING_RATE_BASE, weight_decay=L2_REGULARIZER_WEIGHT)
+    self._lr_scheduler = optim.lr_scheduler.StepLR(self._optimizer, \
+      step_size = LEARNING_RATE_DECAY_STEPS, \
+      gamma = LEARNING_RATE_DECAY_RATE)
 
-  def represent(self, raw_state) -> MuZeroNetOutput:
-    state = self._representation_net(raw_state)
+  def represent(self, observation) -> MuZeroNetOutput:
+    """Transforms the observation into hidden state space.
+
+    Args:
+      observation (torch tensor): minibatch of environment observations, size should be [batch_size, observation_size].
+    """
+    state = self._representation_net(observation)
     policy_logits = self._policy_net(state)
     value = self._value_net(state)
-    return MuZeroNetOutput(state, 0, policy_logits, value)
+    zero_rewards = torch.zeros((state.size()[0], 1))
+    return MuZeroNetOutput(state, zero_rewards, policy_logits, value)
 
   def transit(self, state, action) -> MuZeroNetOutput:
-    state_action = np.append(state, action)
+    """Transits from hidden state with the specified action.
+
+    Args:
+      state (torch tensor): minibatch of hidden states, size should be [batch_size, hidden_state_size].
+      action (torch tensor): minibatch of actions, size should be [batch_size].
+    """
+    state_action = torch.cat((state, action.reshape((-1, 1)).float()), -1)
     next_state = self._dynamics_net(state_action)
     reward = self._reward_net(state_action)
     policy_logits = self._policy_net(next_state)
     value = self._value_net(next_state)
     return MuZeroNetOutput(next_state, reward, policy_logits, value)
 
-  def train(self, trajectories):
-    self._training_steps += 1
-    pass
+  def train(self, batch):
+    """Trains all networks end-to-end.
+
+    batch is sampled from Memory.sample.
+    """
+    observation_batch, action_batch, target_reward, target_policy, target_value = (t.float() for t in map(torch.tensor, batch))
+    batch_size = len(observation_batch)
+    unrolled_steps = len(target_reward[0])
+
+    state, _, policy_logits, value = self.represent(observation_batch)
+    reward_loss = torch.zeros(batch_size)
+    policy_loss = self._policy_loss(policy_logits, target_policy, 0)
+    value_loss = self._value_loss(value, target_value, 0)
+
+    gradient_scale = 1 / unrolled_steps
+    for step in range(unrolled_steps):
+      state, reward, policy_logits, value = self.transit(state, action_batch[:, step])
+      reward_loss += gradient_scale * self._reward_loss(reward, target_reward, step)
+      policy_loss += gradient_scale * self._policy_loss(policy_logits, target_policy, step + 1)
+      value_loss += gradient_scale * self._value_loss(value, target_value, step + 1)
+
+    loss = reward_loss + policy_loss + value_loss
+    loss = loss.mean()
+    print("{}: step={}, loss={}".format(timestamp(), self.training_steps(), loss))
+
+    self._optimizer.zero_grad()
+    loss.backward()
+    self._optimizer.step()
+    self._lr_scheduler.step()
+
+  def _policy_loss(self, policy_logits, target_policy, step_idx):
+    return self._cross_entropy_logits_loss(policy_logits, target_policy[:, step_idx])
+
+  def _value_loss(self, value, target_value, step_idx):
+    return self._scalar_loss(value.squeeze(-1), target_value[:, step_idx])
+
+  def _reward_loss(self, reward, target_reward, step_idx):
+    return self._scalar_loss(reward.squeeze(-1), target_reward[:, step_idx])
+
+  def _scalar_loss(self, pred, target):
+    return nn.MSELoss(reduction='none')(pred, target)
+
+  def _cross_entropy_logits_loss(self, logits, probs):
+    return (-torch.log_softmax(logits, -1) * probs).sum(-1)
 
   def training_steps(self):
-    return self._training_steps
-
-
-class MuZeroNetOutput(typing.NamedTuple):
-  state: typing.List[float]
-  reward: float
-  policy_logits: typing.Dict[int, float]
-  value: float
+    return self._lr_scheduler.last_epoch + 1
 
 
 class Planner:
-  def plan(self, state):
-    """Plan the possible future trajectories from raw state and return the action to take."""
+  def plan(self, observation):
+    """Plan the possible future trajectories from observations and return the action to take."""
     raise NotImplementedError
 
 
@@ -168,21 +246,20 @@ class MinMax:
 
 
 class Node:
-  def __init__(self, netoutput: MuZeroNetOutput, parent: Node = None, action = None, minmax: MinMax = None):
+  def __init__(self, netoutput: MuZeroNetOutput, parent = None, action = None, minmax: MinMax = None):
     self._minmax = minmax if minmax is not None else MinMax()
     self._parent = parent
     self._action = action
-    self._reward = netoutput.reward
-    self._state = netoutput.state
-    prior = self._compute_action_prior(netoutput.policy_logits, parent is None)
-    self._action_stats = {a: ActionStats(prior[a]) for a in ACTIONS}
+    self._reward = netoutput.reward[0].item()
+    self._state = netoutput.state[0]
+    prior = self._compute_action_prior(netoutput.policy_logits[0], parent is None)
+    self._action_stats = {a: ActionStats(prior[a]) for a in range(ACTIONS)}
     self._children = {}
 
   @staticmethod
   def _compute_action_prior(policy_logits, should_add_noise):
-    policy = {a: math.exp(policy_logits[a]) for a in ACTIONS}
-    policy_sum = sum(policy.values())
-    prior = {a: policy[a] / policy_sum for a in ACTIONS}
+    policy = torch.softmax(policy_logits, -1)
+    prior = {a: policy[a].item() for a in range(ACTIONS)}
     if should_add_noise:
       prior = Node._add_dirichlet_prior_noise(prior)
     return prior
@@ -191,13 +268,13 @@ class Node:
   def _add_dirichlet_prior_noise(prior):
     noise = np.random.dirichlet([ROOT_PRIOR_NOISE_DIRICHLET_ALPHA] * ACTIONS)
     frac = ROOT_PRIOR_NOISE_FRACTION
-    return {a: (frac * noise[a] + (1 - frac) * prior[a]) for a in ACTIONS}
+    return {a: (frac * noise[a] + (1 - frac) * prior[a]) for a in range(ACTIONS)}
 
   def state(self):
     return self._state
 
   def choose_action(self):
-    _, a = max((self._upper_confidence_bound(a), a) for a in ACTIONS)
+    _, a = max((self._upper_confidence_bound(a), a) for a in range(ACTIONS))
     return a
 
   def _upper_confidence_bound(self, action):
@@ -225,7 +302,7 @@ class Node:
   def add_child(self, action, netoutput: MuZeroNetOutput):
     child = Node(netoutput, self, action, self._minmax)
     self._children[action] = child
-    child._backtrack(netoutput.value)
+    child._backtrack(netoutput.value[0].item())
 
   def _backtrack(self, value):
     if self._parent is None:
@@ -256,8 +333,8 @@ class MonteCarloTreeSearch(Planner):
     self._muzero = muzero
     self._root = None
 
-  def plan(self, state):
-    self._root = Node(self._muzero.represent(state))
+  def plan(self, observation):
+    self._root = Node(self._muzero.represent(torch.tensor([observation], dtype=torch.float)))
     for _ in range(PLAN_STEPS):
       self._plan(self._root)
     return self._choose_action(self._root)
@@ -274,12 +351,12 @@ class MonteCarloTreeSearch(Planner):
       else:
         break
     action = node.choose_action()
-    output = self._muzero.transit(node.state(), action)
+    output = self._muzero.transit(node.state().unsqueeze(0), torch.tensor(action))
     node.add_child(action, output)
 
   def _choose_action(self, root):
     action_counts = root.action_counts()
-    actions = action_counts.keys()
+    actions = list(action_counts.keys())
     counts = np.array([action_counts[a] for a in actions])
     t = self._action_count_temperature()
     idx = self._sample_index(counts, t)
@@ -303,44 +380,64 @@ class MonteCarloTreeSearch(Planner):
 class Trajectory:
   """A trajectory is (x0, a0, r0, p0, v0, x1, a1, r1, p1, v1, ..., xn).
 
-  x is the raw observation from the environment,
-  a is action,
-  r is the immediate reward of the previous action,
-  p is the probability of actions to be chosen from x,
-  v is the value estimate of x.
+  x (numpy array) is the raw observation from the environment,
+  a (int) is action,
+  r (float) is the immediate reward of the previous action,
+  p (numpy array) is the probability of actions to be chosen from x,
+  v (float) is the value estimate of x.
 
   NOTE: x will be transformed to a state representation in the hidden space,
   the transformed state uses symbol s.
   """
   def __init__(self, x0):
-    self._states = [x0]
+    self._observations = [x0]
     self._actions = []
     self._rewards = []
     self._policies = []
     self._values = []
 
-  def last_state(self):
-    return self._states[-1]
+  def last_observation(self):
+    return self._observations[-1]
 
-  def append(self, current_action, reward, policy, value, next_state):
+  def append(self, current_action, reward, policy, value, next_observation):
     self._actions.append(current_action)
     self._rewards.append(reward)
     self._policies.append(policy)
     self._values.append(value)
-    self._states.append(next_state)
+    self._observations.append(next_observation)
 
-  def num_states(self):
-    return len(self._states)
+  def _max_sample_size(self):
+    return len(self._actions)
 
-  def sample(self, init_state_index, unrolled_steps):
-    """Returns a sample in Memory.sample."""
-    end_index = init_state_index + unrolled_steps
-    state = self._states[init_state_index]
-    actions = tuple(self._actions[init_state_index : end_index])
-    rewards = tuple(self._rewards[init_state_index : end_index])
-    policies = tuple(self._policies[init_state_index : end_index])
-    values = tuple(self._values[init_state_index : end_index])
-    return (state, actions, (rewards, policies, values))
+  def _sample_start_index(self):
+    return np.random.choice(range(self._max_sample_size()))
+
+  def sample(self, unrolled_steps):
+    """Returns a sample in Memory.sample.
+    observation (numpy array)
+    action (int)
+    reward (float)
+    policy (numpy array)
+    value (float)
+    """
+    start_index = self._sample_start_index()
+    end_index = start_index + unrolled_steps
+
+    observation = self._observations[start_index]
+    actions = np.array(self._actions[start_index : end_index], dtype=np.float)
+    rewards = np.array(self._rewards[start_index : end_index], dtype=np.float)
+    for _ in range(end_index - self._max_sample_size()):
+      actions = np.append(actions, np.random.choice(range(ACTIONS)))
+      rewards = np.append(rewards, 0)
+
+    end_index += 1
+    policies = np.array(self._policies[start_index : end_index], dtype=np.float)
+    values = np.array(self._values[start_index : end_index], dtype=np.float)
+    for _ in range(end_index - self._max_sample_size()):
+      policies = np.append(policies, [np.zeros(policies[0].shape)], axis=0)
+      values = np.append(values, 0)
+
+    return (observation, actions, rewards, policies, values)
 
 
 class Memory:
@@ -361,25 +458,28 @@ class Memory:
       return len(self._trajectories)
 
   def sample(self, batch_size):
-    """Returns a batch of (raw_state, actions, targets) where raw_state
-    is uniformly sampled from a uniformly sampled trajectory.
+    """Returns (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch).
 
-    targets = (rewards, policies, values)
-    Each value is a discounted sum of future rewards.
-    actions, rewards, policies, values are all tuples.
-    len(actions) == len(targets)
-    len(actions) <= UNROLLED_STEPS
+    Each batch is a numpy array.
+    The size of the returned batch can be < batch_size, could be 0.
 
     self.size() must > batch_size.
     """
     with self._lock:
-      batch = []
+      observation_batch = []
+      actions_batch = []
+      rewards_batch = []
+      policies_batch = []
+      values_batch = []
       for _ in range(batch_size):
-        traj = np.random.choice(self._trajectories)
-        n = traj.num_states()
-        idx = np.random.choice(range(traj.num_states() - 1))
-        batch.append(traj.sample(idx, UNROLLED_STEPS))
-      return batch
+        t = np.random.choice(self._trajectories)
+        observation, actions, rewards, policies, values = t.sample(UNROLLED_STEPS)
+        observation_batch.append(observation)
+        actions_batch.append(actions)
+        rewards_batch.append(rewards)
+        policies_batch.append(policies)
+        values_batch.append(values)
+      return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
 class Actors:
@@ -405,7 +505,7 @@ def play(env, muzero_net, memory):
   planner = MonteCarloTreeSearch(muzero_net)
   trajectory = Trajectory(env.reset())
   for _ in tqdm(range(EPOCH_STEPS)):
-    x = trajectory.last_state()
+    x = trajectory.last_observation()
     a = planner.plan(x)
     nx, r, done, _ = env.step(a)
     root = planner.root()
@@ -422,8 +522,7 @@ def train(env, muzero_net, memory):
   actors = ThreadActors(ACTORS, play, (env, muzero_net, memory))
   actors.run()
   if memory.size() >= BATCH_SIZE:
-    trajectories = memory.sample(BATCH_SIZE)
-    muzero_net.train(trajectories)
+    muzero_net.train(memory.sample(BATCH_SIZE))
 
 
 if __name__ == '__main__':
@@ -432,7 +531,7 @@ if __name__ == '__main__':
   memory = Memory()
   try:
     for epoch in range(EPOCHS):
-      print('Epoch ' + epoch)
+      print('Epoch {}'.format(epoch))
       train(env, muzero_net, memory)
   finally:
     env.close()

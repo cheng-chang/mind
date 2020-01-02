@@ -509,24 +509,6 @@ class Memory:
       return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
-class Actors:
-  def run(self):
-    raise NotImplementedError
-
-
-class ThreadActors(Actors):
-  def __init__(self, num_actors, fn, args):
-    self._threads = []
-    for _ in range(num_actors):
-      self._threads.append(threading.Thread(target=fn, args=args))
-
-  def run(self):
-    for t in self._threads:
-      t.start()
-    for t in self._threads:
-      t.join()
-
-
 def play(env, muzero_net, memory):
   """Reset the environment and collect a new trajectory into memory."""
   planner = MonteCarloTreeSearch(muzero_net)
@@ -545,6 +527,24 @@ def play(env, muzero_net, memory):
   memory.store(trajectory)
 
 
+class Actors:
+  def run(self):
+    raise NotImplementedError
+
+
+class ThreadActors(Actors):
+  def __init__(self, num_actors, fn, args):
+    self._threads = []
+    for _ in range(num_actors):
+      self._threads.append(threading.Thread(target=fn, args=args))
+
+  def run(self):
+    for t in self._threads:
+      t.start()
+    for t in self._threads:
+      t.join()
+
+
 def train(env, muzero_net, memory):
   actors = ThreadActors(ACTORS, play, (env, muzero_net, memory))
   actors.run()
@@ -552,7 +552,7 @@ def train(env, muzero_net, memory):
     muzero_net.train(memory.sample(BATCH_SIZE))
 
 
-if __name__ == '__main__':
+def main():
   env = gym.make('CartPole-v0')
   muzero_net = MuZeroNet()
   memory = Memory()
@@ -562,3 +562,7 @@ if __name__ == '__main__':
       train(env, muzero_net, memory)
   finally:
     env.close()
+
+
+if __name__ == '__main__':
+  main()

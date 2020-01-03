@@ -485,8 +485,9 @@ class Memory:
     return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
-def play(env, muzero_net, queue):
+def play(muzero_net, queue):
   """Reset the environment and collect a new trajectory into queue."""
+  env = gym.make('CartPole-v0')
   trajectory = Trajectory(env.reset())
   for _ in tqdm(range(EPOCH_STEPS)):
     observation = trajectory.last_observation()
@@ -540,9 +541,9 @@ class MultiProcessActors(Actors):
       p.join()
 
 
-def train(env, muzero_net, memory):
+def train(muzero_net, memory):
   queue = Queue()
-  actors = MultiProcessActors(ACTORS, play, (env, muzero_net, queue))
+  actors = MultiProcessActors(ACTORS, play, (muzero_net, queue))
   actors.start()
   for _ in range(ACTORS):
     trajectory = queue.get()
@@ -553,13 +554,12 @@ def train(env, muzero_net, memory):
 
 
 def main():
-  env = gym.make('CartPole-v0')
   muzero_net = MuZeroNet()
   memory = Memory()
   try:
     for epoch in range(EPOCHS):
       print('Epoch {}'.format(epoch))
-      train(env, muzero_net, memory)
+      train(muzero_net, memory)
   finally:
     env.close()
 

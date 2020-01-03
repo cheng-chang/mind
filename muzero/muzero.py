@@ -227,10 +227,9 @@ class MinMax:
 
 
 class Node:
-  def __init__(self, netoutput: MuZeroNetOutput, parent = None, action = None, minmax: MinMax = None):
+  def __init__(self, netoutput: MuZeroNetOutput, parent = None, minmax: MinMax = None):
     self._minmax = minmax if minmax is not None else MinMax()
     self._parent = parent
-    self._action = action
     self._reward = netoutput.reward[0].item()
     self._state = netoutput.state[0]
     self._value_sum = netoutput.value[0].item()
@@ -296,7 +295,7 @@ class Node:
     return self._children[action]
 
   def add_child(self, action, netoutput: MuZeroNetOutput):
-    child = Node(netoutput, self, action, self._minmax)
+    child = Node(netoutput, self, self._minmax)
     self._children[action] = child
     child._backtrack(netoutput.value[0].item())
 

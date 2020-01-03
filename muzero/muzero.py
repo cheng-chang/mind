@@ -209,26 +209,6 @@ class Planner:
     raise NotImplementedError
 
 
-class ActionStats:
-  def __init__(self, prior):
-    self._visit_count = 0
-    self._q_value_sum = 0
-    self._prior = prior
-
-  def update(self, q_value):
-    self._visit_count += 1
-    self._q_value_sum += q_value
-
-  def visit_count(self):
-    return self._visit_count
-
-  def prior(self):
-    return self._prior
-
-  def q_value(self):
-    return 0 if self._visit_count == 0 else self._q_value_sum / self._visit_count
-
-
 class MinMax:
   """Keep minimum and maximum values seen so far."""
   def __init__(self):
@@ -252,8 +232,9 @@ class Node:
     self._action = action
     self._reward = netoutput.reward[0].item()
     self._state = netoutput.state[0]
-    prior = self._compute_action_prior(netoutput.policy_logits[0], parent is None)
-    self._action_stats = {a: ActionStats(prior[a]) for a in range(ACTIONS)}
+    self._value_sum = netoutput.value[0].item()
+    self._visit_count = 1
+    self._action_prior = self._compute_action_prior(netoutput.policy_logits[0], parent is None)
     self._children = {}
 
   @staticmethod
@@ -270,26 +251,40 @@ class Node:
     frac = ROOT_PRIOR_NOISE_FRACTION
     return {a: (frac * noise[a] + (1 - frac) * prior[a]) for a in range(ACTIONS)}
 
+  def _q_value(self, action):
+    if action not in self._children:
+      return 0
+    child = self._children[action]
+    return child._reward + DISCOUNT * child.value()
+
+  def action_count(self, action):
+    return self._children[action]._visit_count if action in self._children else 0
+
   def state(self):
     return self._state
+
+  def policy(self):
+    counts = np.array([self.action_count(a) for a in range(ACTIONS)])
+    return counts / sum(counts)
+
+  def value(self):
+    return self._value_sum / self._visit_count
 
   def choose_action(self):
     _, a = max((self._upper_confidence_bound(a), a) for a in range(ACTIONS))
     return a
 
   def _upper_confidence_bound(self, action):
-    stats = self._action_stats
-    stat = stats[action]
-    action_counts = sum(map(lambda a: stats[a].visit_count(), stats))
-    action_count = stat.visit_count()
+    action_counts = self._visit_count
+    action_count = self.action_count(action)
+    action_prior = self._action_prior[action]
     c1 = UPPER_CONFIDENCE_BOUND_C1
     c2 = UPPER_CONFIDENCE_BOUND_C2
-
     prior_weight = math.sqrt(action_counts) / (1 + action_count)
     prior_weight *= (c1 + math.log((action_counts + c2 + 1) / c2))
-    prior_score = stat.prior() * prior_weight
+    prior_score = action_prior * prior_weight
 
-    value_score = self._minmax.normalize(stat.q_value())
+    value_score = self._minmax.normalize(self._q_value(action))
 
     return value_score + prior_score
 
@@ -308,24 +303,10 @@ class Node:
     if self._parent is None:
       return
     value = self._reward + DISCOUNT * value
-    stat = self._parent._action_stats[self._action]
-    stat.update(value)
-    self._minmax.update(stat.q_value())
+    self._value_sum += value
+    self._visit_count += 1
+    self._minmax.update(value)
     self._parent._backtrack(value)
-
-  def action_counts(self):
-    return {action: stat.visit_count() for (action, stat) in self._action_stats.items()}
-
-  def action_probs(self):
-    counts = self.action_counts()
-    counts_sum = sum(counts.values())
-    return np.array([counts[a] / counts_sum for a in range(ACTIONS)])
-
-  def _value(self, action):
-    return self._action_stats[action].q_value()
-
-  def action_values(self):
-    return np.array([self._value(a) for a in range(ACTIONS)])
 
 
 class MonteCarloTreeSearch(Planner):
@@ -355,9 +336,8 @@ class MonteCarloTreeSearch(Planner):
     node.add_child(action, output)
 
   def _choose_action(self, root):
-    action_counts = root.action_counts()
-    actions = list(action_counts.keys())
-    counts = np.array([action_counts[a] for a in actions])
+    actions = list(range(ACTIONS))
+    counts = np.array([root.action_count(a) for a in actions])
     t = self._action_count_temperature()
     idx = self._sample_index(counts, t)
     return actions[idx]
@@ -511,17 +491,16 @@ class Memory:
 
 def play(env, muzero_net, memory):
   """Reset the environment and collect a new trajectory into memory."""
-  planner = MonteCarloTreeSearch(muzero_net)
   trajectory = Trajectory(env.reset())
   for _ in tqdm(range(EPOCH_STEPS)):
-    x = trajectory.last_observation()
-    a = planner.plan(x)
-    nx, r, done, _ = env.step(a)
+    observation = trajectory.last_observation()
+    planner = MonteCarloTreeSearch(muzero_net)
+    action = planner.plan(observation)
+    next_observation, reward, done, _ = env.step(action)
     root = planner.root()
-    policy = root.action_probs()
-    values = root.action_values()
-    value = np.dot(policy, values)
-    trajectory.append(a, r, policy, value, nx)
+    policy = root.policy()
+    value = root.value()
+    trajectory.append(action, reward, policy, value, next_observation)
     if done:
       break
   memory.store(trajectory)

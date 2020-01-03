@@ -489,7 +489,10 @@ def play(muzero_net, queue):
   """Reset the environment and collect a new trajectory into queue."""
   env = gym.make('CartPole-v0')
   trajectory = Trajectory(env.reset())
-  for _ in tqdm(range(EPOCH_STEPS)):
+  steps = 0
+  #for _ in tqdm(range(EPOCH_STEPS)):
+  for _ in range(EPOCH_STEPS):
+    steps += 1
     observation = trajectory.last_observation()
     planner = MonteCarloTreeSearch(muzero_net)
     action = planner.plan(observation)
@@ -500,6 +503,7 @@ def play(muzero_net, queue):
     trajectory.append(action, reward, policy, value, next_observation)
     if done:
       break
+  print("steps={}".format(steps))
   queue.put(trajectory)
 
 

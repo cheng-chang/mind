@@ -556,12 +556,9 @@ def train(muzero_net, memory):
 def main():
   muzero_net = MuZeroNet()
   memory = Memory()
-  try:
-    for epoch in range(EPOCHS):
-      print('Epoch {}'.format(epoch))
-      train(muzero_net, memory)
-  finally:
-    env.close()
+  for epoch in range(EPOCHS):
+    print('Epoch {}'.format(epoch))
+    train(muzero_net, memory)
 
 
 if __name__ == '__main__':

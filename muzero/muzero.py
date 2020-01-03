@@ -1,5 +1,6 @@
 from datetime import datetime
 import threading
+from multiprocessing import Process, Queue
 import math
 import typing
 
@@ -16,7 +17,7 @@ FLOAT_MAX = float('inf')
 EPOCHS = int(1e6)
 EPOCH_STEPS = 200
 PLAN_STEPS = 80
-ACTORS = 1
+ACTORS = 3
 MEMORY_SIZE = int(1e6)
 BATCH_SIZE = 64
 ACTIONS = 2
@@ -449,20 +450,16 @@ class Trajectory:
 
 class Memory:
   def __init__(self):
-    """Might be called concurrently by multiple actors, need to be thread-safe."""
-    self._lock = threading.Lock()
     self._trajectories = []
 
   def store(self, trajectory: Trajectory):
     """Store trajectory."""
-    with self._lock:
-      if len(self._trajectories) >= MEMORY_SIZE:
-        self._trajectories.pop(0)
-      self._trajectories.append(trajectory)
+    if len(self._trajectories) >= MEMORY_SIZE:
+      self._trajectories.pop(0)
+    self._trajectories.append(trajectory)
 
   def size(self):
-    with self._lock:
-      return len(self._trajectories)
+    return len(self._trajectories)
 
   def sample(self, batch_size):
     """Returns (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch).
@@ -472,25 +469,24 @@ class Memory:
 
     self.size() must > batch_size.
     """
-    with self._lock:
-      observation_batch = []
-      actions_batch = []
-      rewards_batch = []
-      policies_batch = []
-      values_batch = []
-      for _ in range(batch_size):
-        t = np.random.choice(self._trajectories)
-        observation, actions, rewards, policies, values = t.sample(UNROLLED_STEPS)
-        observation_batch.append(observation)
-        actions_batch.append(actions)
-        rewards_batch.append(rewards)
-        policies_batch.append(policies)
-        values_batch.append(values)
-      return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
+    observation_batch = []
+    actions_batch = []
+    rewards_batch = []
+    policies_batch = []
+    values_batch = []
+    for _ in range(batch_size):
+      t = np.random.choice(self._trajectories)
+      observation, actions, rewards, policies, values = t.sample(UNROLLED_STEPS)
+      observation_batch.append(observation)
+      actions_batch.append(actions)
+      rewards_batch.append(rewards)
+      policies_batch.append(policies)
+      values_batch.append(values)
+    return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
-def play(env, muzero_net, memory):
-  """Reset the environment and collect a new trajectory into memory."""
+def play(env, muzero_net, queue):
+  """Reset the environment and collect a new trajectory into queue."""
   trajectory = Trajectory(env.reset())
   for _ in tqdm(range(EPOCH_STEPS)):
     observation = trajectory.last_observation()
@@ -503,11 +499,14 @@ def play(env, muzero_net, memory):
     trajectory.append(action, reward, policy, value, next_observation)
     if done:
       break
-  memory.store(trajectory)
+  queue.put(trajectory)
 
 
 class Actors:
-  def run(self):
+  def start(self):
+    raise NotImplementedError
+
+  def join(self):
     raise NotImplementedError
 
 
@@ -517,16 +516,38 @@ class ThreadActors(Actors):
     for _ in range(num_actors):
       self._threads.append(threading.Thread(target=fn, args=args))
 
-  def run(self):
+  def start(self):
     for t in self._threads:
       t.start()
+
+  def join(self):
     for t in self._threads:
       t.join()
 
 
+class MultiProcessActors(Actors):
+  def __init__(self, num_actors, fn, args):
+    self._processes = []
+    for _ in range(num_actors):
+      self._processes.append(Process(target=fn, args=args))
+
+  def start(self):
+    for p in self._processes:
+      p.start()
+
+  def join(self):
+    for p in self._processes:
+      p.join()
+
+
 def train(env, muzero_net, memory):
-  actors = ThreadActors(ACTORS, play, (env, muzero_net, memory))
-  actors.run()
+  queue = Queue()
+  actors = MultiProcessActors(ACTORS, play, (env, muzero_net, queue))
+  actors.start()
+  for _ in range(ACTORS):
+    trajectory = queue.get()
+    memory.store(trajectory)
+  actors.join()
   if memory.size() >= BATCH_SIZE:
     muzero_net.train(memory.sample(BATCH_SIZE))
 

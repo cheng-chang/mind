@@ -565,7 +565,6 @@ def play_one_epoch(net, queue):
     observation = trajectory.last_observation()
     planner = MonteCarloTreeSearch(net)
     action = planner.plan(observation)
-    print('action = {}'.format(action))
     next_observation, reward, done, _ = env.step(action)
     root = planner.root()
     policy = root.policy()

@@ -624,7 +624,7 @@ class MultiProcessActors(Actors):
 
 def train(muzero_net, memory, net_storage):
   while memory.size() < BATCH_SIZE: time.sleep(10)
-  print(memory.size())
+  print('memory size = {}'.format(memory.size()))
   muzero_net.train(memory.sample(BATCH_SIZE))
   training_steps = muzero_net.training_steps()
   if training_steps > 0 and training_steps % MODEL_CHECKPOINT_INTERVAL == 0:

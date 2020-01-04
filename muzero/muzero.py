@@ -616,6 +616,8 @@ class MultiProcessActors(Actors):
 
 
 def train(muzero_net, memory, net_storage, queue):
+  # TODO(cc): if trajectories are stored to memory in the background,
+  # then the sampled batch might have more duplicates?
   for _ in range(ACTORS * BATCH_SIZE):
     trajectory = queue.get()
     memory.store(trajectory)

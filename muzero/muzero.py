@@ -263,7 +263,7 @@ class PersistedNetStorage(NetStorage):
     latest_step = self._latest_step.value
     if latest_step == -1:
       return net if net else DummyMuZeroNet()
-    if net and net.training_step() >= latest_step:
+    if net and net.training_steps() >= latest_step:
       return net
     return torch.load(self._model_path(latest_step))
 

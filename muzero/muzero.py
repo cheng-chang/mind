@@ -660,6 +660,7 @@ def main():
     for epoch in range(EPOCHS):
       print('Epoch {}'.format(epoch))
       train(muzero_net, memory, net_storage)
+      time.sleep(1)
     net_storage.put(muzero_net)
   finally:
     queue.put(QUIT)

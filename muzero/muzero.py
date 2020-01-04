@@ -1,6 +1,7 @@
+import os
 from datetime import datetime
 import threading
-from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue, Value
 import math
 import typing
 
@@ -37,7 +38,7 @@ DISCOUNTED_VALUE_STEPS = 10
 LEARNING_RATE_BASE = 0.05
 LEARNING_RATE_DECAY_STEPS = 350e3
 LEARNING_RATE_DECAY_RATE = 0.1
-CHECKPOINT_INTERVAL = int(1e3)
+MODEL_CHECKPOINT_INTERVAL = int(1e3)
 L2_REGULARIZER_WEIGHT = 1e-4
 
 
@@ -112,6 +113,23 @@ class MuZeroNetOutput(typing.NamedTuple):
   value: torch.Tensor
 
 
+class DummyMuZeroNet:
+  def represent(self, observation):
+    return MuZeroNetOutput(torch.randn_like(observation), \
+      torch.tensor([0.]), \
+      torch.tensor([[1., 1.]]), \
+      torch.tensor([0.]))
+
+  def transit(self, state, action):
+    return MuZeroNetOutput(torch.randn_like(state), \
+      torch.tensor([0.]), \
+      torch.tensor([[1., 1.]]), \
+      torch.tensor([0.]))
+
+  def training_steps(self):
+    return 0
+
+
 class MuZeroNet:
   def __init__(self):
     self._representation_net = RepresentationNet()
@@ -154,6 +172,9 @@ class MuZeroNet:
     policy_logits = self._policy_net(next_state)
     value = self._value_net(next_state)
     return MuZeroNetOutput(next_state, reward, policy_logits, value)
+
+  def training_steps(self):
+    return self._lr_scheduler.last_epoch + 1
 
   def train(self, batch):
     """Trains all networks end-to-end.
@@ -200,8 +221,50 @@ class MuZeroNet:
   def _cross_entropy_logits_loss(self, logits, probs):
     return (-torch.log_softmax(logits, -1) * probs).sum(-1)
 
-  def training_steps(self):
-    return self._lr_scheduler.last_epoch + 1
+
+class NetStorage:
+  """Stores neural networks to be shared among Actors."""
+  def put(self, net):
+    """Stores the net as the latest."""
+    raise NotImplementedError
+
+  def get(self, net=None):
+    """Retrieves the latest stored network.
+
+    1. If there is no stored network, and net is not None, then return net;
+    2. If there is no stored network, and net is None, then return a default one.
+    3. If net is provided and its training step is larger than or
+    equal to the latest stored network, then return the provided net.
+    4. Otherwise, return the latest stored network.
+    """
+    raise NotImplementedError
+
+
+class PersistedNetStorage(NetStorage):
+  """Stores the network on disk.
+
+  Each stored network is an on-disk file named "{training step}.model"
+  under the specified model directory.
+  """
+  def __init__(self, model_dir):
+    self._model_dir = model_dir
+    self._latest_step = Value('i', -1)
+
+  def _model_path(self, step):
+    return os.path.join(self._model_dir, '{}.model'.format(step))
+
+  def put(self, net):
+    step = net.training_step()
+    torch.save(net, self._model_path(step))
+    self._latest_step.value = step
+
+  def get(self, net=None):
+    latest_step = self._latest_step.value
+    if latest_step == -1:
+      return net if net else DummyMuZeroNet()
+    if net and net.training_step() >= latest_step:
+      return net
+    return torch.load(self._model_path(latest_step))
 
 
 class Planner:
@@ -484,8 +547,15 @@ class Memory:
     return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
-def play(muzero_net, queue):
+def play(net_storage, queue):
   """Reset the environment and collect a new trajectory into queue."""
+  net = None
+  while net is None or net.training_steps() < EPOCHS:
+    net = net_storage.get(net)
+    play_one_epoch(net, queue)
+
+
+def play_one_epoch(net, queue):
   env = gym.make('CartPole-v0')
   trajectory = Trajectory(env.reset())
   steps = 0
@@ -493,8 +563,9 @@ def play(muzero_net, queue):
   for _ in range(EPOCH_STEPS):
     steps += 1
     observation = trajectory.last_observation()
-    planner = MonteCarloTreeSearch(muzero_net)
+    planner = MonteCarloTreeSearch(net)
     action = planner.plan(observation)
+    #print(action)
     next_observation, reward, done, _ = env.step(action)
     root = planner.root()
     policy = root.policy()
@@ -544,24 +615,36 @@ class MultiProcessActors(Actors):
       p.join()
 
 
-def train(muzero_net, memory):
-  queue = Queue()
-  actors = MultiProcessActors(ACTORS, play, (muzero_net, queue))
-  actors.start()
-  for _ in range(ACTORS):
+def train(muzero_net, memory, net_storage, queue):
+  for _ in range(ACTORS * BATCH_SIZE):
     trajectory = queue.get()
     memory.store(trajectory)
-  actors.join()
-  if memory.size() >= BATCH_SIZE:
-    muzero_net.train(memory.sample(BATCH_SIZE))
+  muzero_net.train(memory.sample(BATCH_SIZE))
+  training_steps = muzero_net.training_steps()
+  if training_steps > 0 and training_steps % MODEL_CHECKPOINT_INTERVAL == 0:
+    net_storage.put(muzero_net)
 
 
 def main():
   muzero_net = MuZeroNet()
   memory = Memory()
+  experiment_dir = os.path.join(os.getcwd(), 'experiments', timestamp())
+  model_dir = os.path.join(experiment_dir, 'models')
+  os.makedirs(model_dir)
+  net_storage = PersistedNetStorage(model_dir)
+  queue = Queue(ACTORS * BATCH_SIZE)
+
+  actors = MultiProcessActors(ACTORS, play, (net_storage, queue))
+  actors.start()
+
   for epoch in range(EPOCHS):
     print('Epoch {}'.format(epoch))
-    train(muzero_net, memory)
+    train(muzero_net, memory, net_storage, queue)
+
+  net_storage.put(muzero_net)
+  actors.join()
+  if len(os.listdir(model_dir)) == 0:
+    os.removedirs(model_dir)
 
 
 if __name__ == '__main__':

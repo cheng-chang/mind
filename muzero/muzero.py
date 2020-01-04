@@ -23,7 +23,7 @@ EPOCH_STEPS = 200
 PLAN_STEPS = 80
 ACTORS = 3
 MEMORY_SIZE = int(1e6)
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 ACTIONS = 2
 ROOT_PRIOR_NOISE_DIRICHLET_ALPHA = 0.03
 ROOT_PRIOR_NOISE_FRACTION = 0.25
@@ -41,7 +41,7 @@ DISCOUNTED_VALUE_STEPS = 10
 LEARNING_RATE_BASE = 0.05
 LEARNING_RATE_DECAY_STEPS = 350e3
 LEARNING_RATE_DECAY_RATE = 0.1
-MODEL_CHECKPOINT_INTERVAL = int(1e3)
+MODEL_CHECKPOINT_INTERVAL = 100
 L2_REGULARIZER_WEIGHT = 1e-4
 
 
@@ -572,7 +572,7 @@ def play_one_epoch(net, queue):
     observation = trajectory.last_observation()
     planner = MonteCarloTreeSearch(net)
     action = planner.plan(observation)
-    #print(action)
+    print('action = {}'.format(action))
     next_observation, reward, done, _ = env.step(action)
     root = planner.root()
     policy = root.policy()

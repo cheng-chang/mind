@@ -626,25 +626,24 @@ def train(muzero_net, memory, net_storage, queue):
 
 
 def main():
-  muzero_net = MuZeroNet()
-  memory = Memory()
-  experiment_dir = os.path.join(os.getcwd(), 'experiments', timestamp())
-  model_dir = os.path.join(experiment_dir, 'models')
-  os.makedirs(model_dir)
-  net_storage = PersistedNetStorage(model_dir)
-  queue = Queue(ACTORS * BATCH_SIZE)
-
-  actors = MultiProcessActors(ACTORS, play, (net_storage, queue))
-  actors.start()
-
-  for epoch in range(EPOCHS):
-    print('Epoch {}'.format(epoch))
-    train(muzero_net, memory, net_storage, queue)
-
-  net_storage.put(muzero_net)
-  actors.join()
-  if len(os.listdir(model_dir)) == 0:
-    os.removedirs(model_dir)
+  try:
+    muzero_net = MuZeroNet()
+    memory = Memory()
+    experiment_dir = os.path.join(os.getcwd(), 'experiments', timestamp())
+    model_dir = os.path.join(experiment_dir, 'models')
+    os.makedirs(model_dir)
+    net_storage = PersistedNetStorage(model_dir)
+    queue = Queue(ACTORS * BATCH_SIZE)
+    actors = MultiProcessActors(ACTORS, play, (net_storage, queue))
+    actors.start()
+    for epoch in range(EPOCHS):
+      print('Epoch {}'.format(epoch))
+      train(muzero_net, memory, net_storage, queue)
+    net_storage.put(muzero_net)
+  finally:
+    actors.join()
+    if len(os.listdir(model_dir)) == 0:
+      os.removedirs(model_dir)
 
 
 if __name__ == '__main__':

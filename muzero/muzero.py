@@ -255,7 +255,7 @@ class PersistedNetStorage(NetStorage):
     return os.path.join(self._model_dir, '{}.model'.format(step))
 
   def put(self, net):
-    step = net.training_step()
+    step = net.training_steps()
     torch.save(net, self._model_path(step))
     self._latest_step.value = step
 
@@ -618,7 +618,7 @@ class MultiProcessActors(Actors):
 def train(muzero_net, memory, net_storage, queue):
   # TODO(cc): if trajectories are stored to memory in the background,
   # then the sampled batch might have more duplicates?
-  for _ in range(ACTORS * BATCH_SIZE):
+  for _ in range(BATCH_SIZE):
     trajectory = queue.get()
     memory.store(trajectory)
   muzero_net.train(memory.sample(BATCH_SIZE))

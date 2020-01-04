@@ -1,4 +1,5 @@
 import os
+import time
 from datetime import datetime
 import threading
 from multiprocessing import Process, Queue, Value
@@ -15,6 +16,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 
+QUIT = "quit"
 FLOAT_MAX = float('inf')
 EPOCHS = int(1e6)
 EPOCH_STEPS = 200
@@ -513,16 +515,19 @@ class Trajectory:
 
 class Memory:
   def __init__(self):
+    self._lock = threading.Lock()
     self._trajectories = []
 
   def store(self, trajectory: Trajectory):
     """Store trajectory."""
-    if len(self._trajectories) >= MEMORY_SIZE:
-      self._trajectories.pop(0)
-    self._trajectories.append(trajectory)
+    with self._lock:
+      if len(self._trajectories) >= MEMORY_SIZE:
+        self._trajectories.pop(0)
+      self._trajectories.append(trajectory)
 
   def size(self):
-    return len(self._trajectories)
+    with self._lock:
+      return len(self._trajectories)
 
   def sample(self, batch_size):
     """Returns (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch).
@@ -532,20 +537,21 @@ class Memory:
 
     self.size() must > batch_size.
     """
-    observation_batch = []
-    actions_batch = []
-    rewards_batch = []
-    policies_batch = []
-    values_batch = []
-    for _ in range(batch_size):
-      t = np.random.choice(self._trajectories)
-      observation, actions, rewards, policies, values = t.sample(UNROLLED_STEPS)
-      observation_batch.append(observation)
-      actions_batch.append(actions)
-      rewards_batch.append(rewards)
-      policies_batch.append(policies)
-      values_batch.append(values)
-    return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
+    with self._lock:
+      observation_batch = []
+      actions_batch = []
+      rewards_batch = []
+      policies_batch = []
+      values_batch = []
+      for _ in range(batch_size):
+        t = np.random.choice(self._trajectories)
+        observation, actions, rewards, policies, values = t.sample(UNROLLED_STEPS)
+        observation_batch.append(observation)
+        actions_batch.append(actions)
+        rewards_batch.append(rewards)
+        policies_batch.append(policies)
+        values_batch.append(values)
+      return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
 def play(net_storage, queue, kill_signal):
@@ -604,7 +610,7 @@ class MultiProcessActors(Actors):
   def __init__(self, num_actors, fn, args):
     self._processes = []
     for _ in range(num_actors):
-      self._processes.append(Process(target=fn, args=args))
+      self._processes.append(Process(target=fn, args=args, daemon=True))
 
   def start(self):
     for p in self._processes:
@@ -615,37 +621,53 @@ class MultiProcessActors(Actors):
       p.join()
 
 
-def train(muzero_net, memory, net_storage, queue):
-  # TODO(cc): if trajectories are stored to memory in the background,
-  # then the sampled batch might have more duplicates?
-  for _ in range(BATCH_SIZE):
-    trajectory = queue.get()
-    memory.store(trajectory)
+def train(muzero_net, memory, net_storage):
+  while memory.size() < BATCH_SIZE: time.sleep(10)
+  print('memory size = {}'.format(memory.size()))
   muzero_net.train(memory.sample(BATCH_SIZE))
   training_steps = muzero_net.training_steps()
   if training_steps > 0 and training_steps % MODEL_CHECKPOINT_INTERVAL == 0:
     net_storage.put(muzero_net)
 
 
+def transfer(queue, memory):
+  """Transfers trajectory from queue to memory."""
+  while True:
+    trajectory = queue.get()
+    if trajectory == QUIT:
+      break
+    memory.store(trajectory)
+
+
 def main():
   try:
     muzero_net = MuZeroNet()
-    memory = Memory()
+
     experiment_dir = os.path.join(os.getcwd(), 'experiments', timestamp())
     model_dir = os.path.join(experiment_dir, 'models')
     os.makedirs(model_dir)
+
     net_storage = PersistedNetStorage(model_dir)
     queue = Queue(ACTORS * BATCH_SIZE)
     kill_signal = Value(ctypes.c_bool, False)
     actors = MultiProcessActors(ACTORS, play, (net_storage, queue, kill_signal))
     actors.start()
+
+    memory = Memory()
+    transferer = threading.Thread(target=transfer, args=(queue, memory))
+    transferer.start()
+
     for epoch in range(EPOCHS):
       print('Epoch {}'.format(epoch))
-      train(muzero_net, memory, net_storage, queue)
+      train(muzero_net, memory, net_storage)
     net_storage.put(muzero_net)
   finally:
+    queue.put(QUIT)
+    transferer.join()
+
     kill_signal.value = True
     actors.join()
+
     if len(os.listdir(model_dir)) == 0:
       os.removedirs(model_dir)
 

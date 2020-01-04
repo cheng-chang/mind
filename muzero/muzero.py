@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 import threading
 from multiprocessing import Process, Queue, Value
+import ctypes
 import math
 import typing
 
@@ -547,10 +548,10 @@ class Memory:
     return tuple(map(np.array, (observation_batch, actions_batch, rewards_batch, policies_batch, values_batch)))
 
 
-def play(net_storage, queue):
+def play(net_storage, queue, kill_signal):
   """Reset the environment and collect a new trajectory into queue."""
   net = None
-  while net is None or net.training_steps() < EPOCHS:
+  while (not kill_signal.value) and (net is None or net.training_steps() < EPOCHS):
     net = net_storage.get(net)
     play_one_epoch(net, queue)
 
@@ -635,13 +636,15 @@ def main():
     os.makedirs(model_dir)
     net_storage = PersistedNetStorage(model_dir)
     queue = Queue(ACTORS * BATCH_SIZE)
-    actors = MultiProcessActors(ACTORS, play, (net_storage, queue))
+    kill_signal = Value(ctypes.c_bool, False)
+    actors = MultiProcessActors(ACTORS, play, (net_storage, queue, kill_signal))
     actors.start()
     for epoch in range(EPOCHS):
       print('Epoch {}'.format(epoch))
       train(muzero_net, memory, net_storage, queue)
     net_storage.put(muzero_net)
   finally:
+    kill_signal.value = True
     actors.join()
     if len(os.listdir(model_dir)) == 0:
       os.removedirs(model_dir)

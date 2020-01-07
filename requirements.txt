@@ -1,5 +1,4 @@
 gym
-tensorflow
 torch
 numpy
 tqdm

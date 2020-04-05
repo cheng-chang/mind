@@ -186,6 +186,12 @@ if __name__ == '__main__':
         theta = iterdata['theta_mean']
         reward = noisy_evaluation(theta)
         mean_episode_reward = iterdata['y_mean']
+        # NOTE(cc):
+        # in evaluation, reward can be close to 100 while mean_episode_reward may be < 0.
+        # this is because the deviation of the rewards in the batch.
+        # In this case, the evaluation reward should be a more concise metrics.
+        # So pay attention to metrics, if you look at mean_episode_reward,
+        # you may think the problem is never solved, or it stucks at local sub-optimal minima.
         print('{},{},{}'.format(i, mean_episode_reward, reward))
         rewards.append(mean_episode_reward)
         # sys.stdout.write("{},{}\n".format(i, iterdata['y_mean']))

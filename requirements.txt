@@ -3,3 +3,4 @@ numpy
 tqdm
 tensorflow
 torch
+matplotlib

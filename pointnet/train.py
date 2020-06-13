@@ -68,7 +68,7 @@ def train_one_batch(optimizer, lr_sched, model, data, label):
   cross_entropy = nn.CrossEntropyLoss()
   loss = cross_entropy(pred, label) + \
          regularize_orthogonal_matrix(feature_transform_matrix)
-  print('train loss:', loss)
+  print('train loss:', loss.item())
   print('train accuracy:', accuracy(pred, label))
   # optimize
   optimizer.zero_grad()
@@ -83,7 +83,7 @@ def eval_one_batch(model, data, label):
     label = torch.squeeze(label)
     cross_entropy = nn.CrossEntropyLoss()
     loss = cross_entropy(pred, label)
-    print('eval loss:', loss)
+    print('eval loss:', loss.item())
     print('eval accuracy:', accuracy(pred, label))
 
 

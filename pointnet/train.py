@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(THIS_DIR, 'log')
+LOG_DIR = os.path.join(THIS_DIR, 'log-decay-epoch-20-rate-0.5')
 LOGGER = SummaryWriter(LOG_DIR)
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")

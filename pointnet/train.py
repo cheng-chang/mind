@@ -42,7 +42,7 @@ def regularize_orthogonal_matrix(matrix, weight=0.001):
   I = I.repeat(B, 1, 1)
   diff = mm - I
   l2 = nn.MSELoss()
-  loss = l2(diff, torch.zeros(diff.shape))
+  loss = l2(diff, torch.zeros(diff.shape).to(DEVICE))
   return loss * weight
 
 

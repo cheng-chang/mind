@@ -8,12 +8,12 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+from torch.utils.tensorboard import SummaryWriter
 
 
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(THIS_DIR, 'log')
-if not os.path.exists(LOG_DIR):
-  os.mkdir(LOG_DIR)
+LOGGER = SummaryWriter(LOG_DIR)
 
 DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -63,29 +63,31 @@ def accuracy(pred, label):
   return accuracy
 
 
-def train_one_batch(optimizer, model, data, label):
+def train_one_batch(batch_index, optimizer, model, data, label):
   pred, feature_transform_matrix = model(data)
   # loss
   label = torch.squeeze(label)
   cross_entropy = nn.CrossEntropyLoss()
   loss = cross_entropy(pred, label) + \
          regularize_orthogonal_matrix(feature_transform_matrix)
-  print('train loss:', loss.item())
-  print('train accuracy:', accuracy(pred, label))
+  if batch_index % 100 == 99:
+    LOGGER.add_scalar('train loss', loss.item(), batch_index)
+    LOGGER.add_scalar('train accuracy', accuracy(pred, label), batch_index)
   # optimize
   optimizer.zero_grad()
   loss.backward()
   optimizer.step()
 
 
-def eval_one_batch(model, data, label):
+def eval_one_batch(batch_index, model, data, label):
   with torch.no_grad():
     pred, _ = model(data)
     label = torch.squeeze(label)
     cross_entropy = nn.CrossEntropyLoss()
     loss = cross_entropy(pred, label)
-    print('eval loss:', loss.item())
-    print('eval accuracy:', accuracy(pred, label))
+    if batch_index % 100 == 99:
+      LOGGER.add_scalar('eval loss', loss.item(), batch_index)
+      LOGGER.add_scalar('eval accuracy', accuracy(pred, label), batch_index)
 
 
 def yield_batch(file):
@@ -108,16 +110,20 @@ def yield_batch(file):
 def train_one_epoch(optimizer, model):
   train_files = data_module.get_train_files()
   random.shuffle(train_files)
+  batch_index = 0
   for file in train_files:
     for data, label in yield_batch(file):
-      train_one_batch(optimizer, model, data, label)
+      train_one_batch(batch_index, optimizer, model, data, label)
+      batch_index += 1
 
 
 def eval_one_epoch(model):
   test_files = data_module.get_test_files()
+  batch_index = 0
   for file in test_files:
     for data, label in yield_batch(file):
-      eval_one_batch(model, data, label)
+      eval_one_batch(batch_index, model, data, label)
+      batch_index += 1
 
 
 def train():
@@ -126,7 +132,6 @@ def train():
   optimizer = optim.Adam(model.parameters(), lr=BASE_LR)
   lr_sched = optim.lr_scheduler.StepLR(optimizer, LR_DECAY_EPOCH, LR_DECAY_RATE)
   for epoch in range(EPOCH):
-    print('Epoch', epoch)
     train_one_epoch(optimizer, model)
     eval_one_epoch(model)
     lr_sched.step()

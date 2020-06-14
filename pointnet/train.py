@@ -18,8 +18,8 @@ if not os.path.exists(LOG_DIR):
 EPOCH = 250
 BATCH = 32
 BASE_LR = 0.001
+LR_DECAY_EPOCH = 25
 LR_DECAY_RATE = 0.8
-LR_DECAY_STEP = 100 # decay every 100 batches
 
 
 def regularize_orthogonal_matrix(matrix, weight=0.001):
@@ -61,7 +61,7 @@ def accuracy(pred, label):
   return accuracy
 
 
-def train_one_batch(optimizer, lr_sched, model, data, label):
+def train_one_batch(optimizer, model, data, label):
   pred, feature_transform_matrix = model(data)
   # loss
   label = torch.squeeze(label)
@@ -74,7 +74,6 @@ def train_one_batch(optimizer, lr_sched, model, data, label):
   optimizer.zero_grad()
   loss.backward()
   optimizer.step()
-  lr_sched.step()
 
 
 def eval_one_batch(model, data, label):
@@ -103,12 +102,12 @@ def yield_batch(file):
           torch.tensor(label[start_idx:end_idx, :], dtype=torch.long)
 
 
-def train_one_epoch(optimizer, lr_sched, model):
+def train_one_epoch(optimizer, model):
   train_files = data_module.get_train_files()
   random.shuffle(train_files)
   for file in train_files:
     for data, label in yield_batch(file):
-      train_one_batch(optimizer, lr_sched, model, data, label)
+      train_one_batch(optimizer, model, data, label)
 
 
 def eval_one_epoch(model):
@@ -121,11 +120,12 @@ def eval_one_epoch(model):
 def train():
   model = model_module.PointNetClassifier()
   optimizer = optim.Adam(model.parameters(), lr=BASE_LR)
-  lr_sched = optim.lr_scheduler.StepLR(optimizer, LR_DECAY_STEP, LR_DECAY_RATE)
+  lr_sched = optim.lr_scheduler.StepLR(optimizer, LR_DECAY_EPOCH, LR_DECAY_RATE)
   for epoch in range(EPOCH):
     print('Epoch', epoch)
-    train_one_epoch(optimizer, lr_sched, model)
+    train_one_epoch(optimizer, model)
     eval_one_epoch(model)
+    lr_sched.step()
     if epoch % 10 == 0:
       torch.save(model.state_dict(), os.path.join(LOG_DIR, "model.ckpt"))
 

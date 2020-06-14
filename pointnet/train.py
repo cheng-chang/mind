@@ -72,6 +72,7 @@ def train_one_batch(step, optimizer, model, data, label):
          regularize_orthogonal_matrix(feature_transform_matrix)
   LOGGER.add_scalar('Loss/train', loss.item(), step)
   LOGGER.add_scalar('Accuracy/train', accuracy(pred, label), step)
+  print(step)
   # optimize
   optimizer.zero_grad()
   loss.backward()

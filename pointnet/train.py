@@ -88,14 +88,15 @@ def eval_one_batch(step, model, data, label):
     LOGGER.add_scalar('Accuracy/eval', accuracy(pred, label), step)
 
 
-def yield_batch(file):
+def yield_batch(file, training=True):
   """
   Yields batches of (data, label) as pair of Tensors.
   """
   data, label = data_module.load_point_cloud(file)
   data, label = data_module.shuffle(data, label)
-  data_module.random_rotate_point_cloud(data)
-  data_module.jitter_point_cloud(data)
+  if training:
+    data_module.random_rotate_point_cloud(data)
+    data_module.jitter_point_cloud(data)
   num_batches = data.shape[0] // BATCH
   for batch in range(num_batches):
     start_idx = batch * BATCH
@@ -118,7 +119,7 @@ def train_one_epoch(step, optimizer, model):
 def eval_one_epoch(step, model):
   test_files = data_module.get_test_files()
   for file in test_files:
-    for data, label in yield_batch(file):
+    for data, label in yield_batch(file, training=False):
       eval_one_batch(step, model, data, label)
       step += 1
   return step
@@ -132,6 +133,7 @@ def train():
   train_step = 0
   eval_step = 0
   for epoch in range(EPOCH):
+    print('Epoch', epoch)
     train_step = train_one_epoch(train_step, optimizer, model)
     eval_step = eval_one_epoch(eval_step, model)
     lr_sched.step()

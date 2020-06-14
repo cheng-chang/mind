@@ -20,8 +20,8 @@ DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 EPOCH = 250
 BATCH = 32
 BASE_LR = 0.001
-LR_DECAY_EPOCH = 13
-LR_DECAY_RATE = 0.8
+LR_DECAY_EPOCH = 25
+LR_DECAY_RATE = 0.7
 
 
 def regularize_orthogonal_matrix(matrix, weight=0.001):

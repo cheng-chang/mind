@@ -57,7 +57,7 @@ def accuracy(pred, label):
   Returns:
     percentage of correct predictions
   """
-  pred_class = np.argmax(pred.cpu().numpy(), 1)
+  pred_class = np.argmax(pred.cpu().detach().numpy(), 1)
   correct = np.sum(pred_class == label.cpu().numpy())
   accuracy = correct / label.shape[0]
   return accuracy

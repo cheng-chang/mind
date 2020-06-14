@@ -105,19 +105,17 @@ def yield_batch(file):
     yield data_batch, label_batch
 
 
-def train_one_epoch(optimizer, model):
+def train_one_epoch(step, optimizer, model):
   train_files = data_module.get_train_files()
   random.shuffle(train_files)
-  step = 0
   for file in train_files:
     for data, label in yield_batch(file):
       train_one_batch(step, optimizer, model, data, label)
       step += 1
 
 
-def eval_one_epoch(model):
+def eval_one_epoch(step, model):
   test_files = data_module.get_test_files()
-  step = 0
   for file in test_files:
     for data, label in yield_batch(file):
       eval_one_batch(step, model, data, label)
@@ -129,9 +127,11 @@ def train():
   model.to(DEVICE)
   optimizer = optim.Adam(model.parameters(), lr=BASE_LR)
   lr_sched = optim.lr_scheduler.StepLR(optimizer, LR_DECAY_EPOCH, LR_DECAY_RATE)
+  train_step = 0
+  eval_step = 0
   for epoch in range(EPOCH):
-    train_one_epoch(optimizer, model)
-    eval_one_epoch(model)
+    train_one_epoch(train_step, optimizer, model)
+    eval_one_epoch(eval_step, model)
     lr_sched.step()
     if epoch % 10 == 0:
       torch.save(model.state_dict(), os.path.join(LOG_DIR, "model.ckpt"))

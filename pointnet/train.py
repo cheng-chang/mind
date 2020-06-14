@@ -63,31 +63,29 @@ def accuracy(pred, label):
   return accuracy
 
 
-def train_one_batch(batch_index, optimizer, model, data, label):
+def train_one_batch(step, optimizer, model, data, label):
   pred, feature_transform_matrix = model(data)
   # loss
   label = torch.squeeze(label)
   cross_entropy = nn.CrossEntropyLoss()
   loss = cross_entropy(pred, label) + \
          regularize_orthogonal_matrix(feature_transform_matrix)
-  if batch_index % 100 == 99:
-    LOGGER.add_scalar('train loss', loss.item(), batch_index)
-    LOGGER.add_scalar('train accuracy', accuracy(pred, label), batch_index)
+  LOGGER.add_scalar('train loss', loss.item(), step)
+  LOGGER.add_scalar('train accuracy', accuracy(pred, label), step)
   # optimize
   optimizer.zero_grad()
   loss.backward()
   optimizer.step()
 
 
-def eval_one_batch(batch_index, model, data, label):
+def eval_one_batch(step, model, data, label):
   with torch.no_grad():
     pred, _ = model(data)
     label = torch.squeeze(label)
     cross_entropy = nn.CrossEntropyLoss()
     loss = cross_entropy(pred, label)
-    if batch_index % 100 == 99:
-      LOGGER.add_scalar('eval loss', loss.item(), batch_index)
-      LOGGER.add_scalar('eval accuracy', accuracy(pred, label), batch_index)
+    LOGGER.add_scalar('eval loss', loss.item(), step)
+    LOGGER.add_scalar('eval accuracy', accuracy(pred, label), step)
 
 
 def yield_batch(file):
@@ -110,20 +108,20 @@ def yield_batch(file):
 def train_one_epoch(optimizer, model):
   train_files = data_module.get_train_files()
   random.shuffle(train_files)
-  batch_index = 0
+  step = 0
   for file in train_files:
     for data, label in yield_batch(file):
-      train_one_batch(batch_index, optimizer, model, data, label)
-      batch_index += 1
+      train_one_batch(step, optimizer, model, data, label)
+      step += 1
 
 
 def eval_one_epoch(model):
   test_files = data_module.get_test_files()
-  batch_index = 0
+  step = 0
   for file in test_files:
     for data, label in yield_batch(file):
-      eval_one_batch(batch_index, model, data, label)
-      batch_index += 1
+      eval_one_batch(step, model, data, label)
+      step += 1
 
 
 def train():

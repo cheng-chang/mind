@@ -37,7 +37,7 @@ def regularize_orthogonal_matrix(matrix, weight=0.001):
   """
   B, K, _ = matrix.shape
   mm = torch.bmm(matrix, torch.transpose(matrix, 1, 2))
-  I = torch.eye(K)
+  I = torch.eye(K).to(DEVICE)
   I = I.reshape((1, K, K))
   I = I.repeat(B, 1, 1)
   diff = mm - I

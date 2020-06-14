@@ -72,7 +72,6 @@ def train_one_batch(step, optimizer, model, data, label):
          regularize_orthogonal_matrix(feature_transform_matrix)
   LOGGER.add_scalar('Loss/train', loss.item(), step)
   LOGGER.add_scalar('Accuracy/train', accuracy(pred, label), step)
-  print(step)
   # optimize
   optimizer.zero_grad()
   loss.backward()
@@ -113,6 +112,7 @@ def train_one_epoch(step, optimizer, model):
     for data, label in yield_batch(file):
       train_one_batch(step, optimizer, model, data, label)
       step += 1
+  return step
 
 
 def eval_one_epoch(step, model):
@@ -121,6 +121,7 @@ def eval_one_epoch(step, model):
     for data, label in yield_batch(file):
       eval_one_batch(step, model, data, label)
       step += 1
+  return step
 
 
 def train():
@@ -131,8 +132,8 @@ def train():
   train_step = 0
   eval_step = 0
   for epoch in range(EPOCH):
-    train_one_epoch(train_step, optimizer, model)
-    eval_one_epoch(eval_step, model)
+    train_step = train_one_epoch(train_step, optimizer, model)
+    eval_step = eval_one_epoch(eval_step, model)
     lr_sched.step()
     if epoch % 10 == 0:
       torch.save(model.state_dict(), os.path.join(LOG_DIR, "model.ckpt"))

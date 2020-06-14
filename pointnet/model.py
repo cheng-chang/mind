@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
 class InputTransformNet(nn.Module):
   def __init__(self):
     super().__init__()
@@ -47,8 +50,8 @@ class InputTransformNet(nn.Module):
     # w: 256 x 9
     # b: 9
     # xw + b: B x 9 -> B x 3 x 3
-    w = torch.zeros(256, 9, requires_grad=True)
-    b = torch.eye(3, requires_grad=True).flatten()
+    w = torch.zeros(256, 9, requires_grad=True).to(DEVICE)
+    b = torch.eye(3, requires_grad=True).to(DEVICE).flatten()
     t = torch.mm(x, w) + b
     return t.reshape((B, 3, 3))
 
@@ -97,8 +100,8 @@ class FeatureTransformNet(nn.Module):
     # w: 256 x (64x64)
     # b: (64x64)
     # xw + b: B x (64x64) -> B x 64 x64
-    w = torch.zeros(256, 64 * 64, requires_grad=True)
-    b = torch.eye(64, requires_grad=True).flatten()
+    w = torch.zeros(256, 64 * 64, requires_grad=True).to(DEVICE)
+    b = torch.eye(64, requires_grad=True).to(DEVICE).flatten()
     t = torch.mm(x, w) + b
     return t.reshape((B, 64, 64))
 

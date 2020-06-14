@@ -70,8 +70,8 @@ def train_one_batch(step, optimizer, model, data, label):
   cross_entropy = nn.CrossEntropyLoss()
   loss = cross_entropy(pred, label) + \
          regularize_orthogonal_matrix(feature_transform_matrix)
-  LOGGER.add_scalar('train loss', loss.item(), step)
-  LOGGER.add_scalar('train accuracy', accuracy(pred, label), step)
+  LOGGER.add_scalar('Loss/train', loss.item(), step)
+  LOGGER.add_scalar('Accuracy/train', accuracy(pred, label), step)
   # optimize
   optimizer.zero_grad()
   loss.backward()
@@ -84,8 +84,8 @@ def eval_one_batch(step, model, data, label):
     label = torch.squeeze(label)
     cross_entropy = nn.CrossEntropyLoss()
     loss = cross_entropy(pred, label)
-    LOGGER.add_scalar('eval loss', loss.item(), step)
-    LOGGER.add_scalar('eval accuracy', accuracy(pred, label), step)
+    LOGGER.add_scalar('Loss/eval', loss.item(), step)
+    LOGGER.add_scalar('Accuracy/eval', accuracy(pred, label), step)
 
 
 def yield_batch(file):

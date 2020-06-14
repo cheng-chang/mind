@@ -15,6 +15,8 @@ LOG_DIR = os.path.join(THIS_DIR, 'log')
 if not os.path.exists(LOG_DIR):
   os.mkdir(LOG_DIR)
 
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
 EPOCH = 250
 BATCH = 32
 BASE_LR = 0.001
@@ -98,8 +100,9 @@ def yield_batch(file):
   for batch in range(num_batches):
     start_idx = batch * BATCH
     end_idx = (batch + 1) * BATCH
-    yield torch.tensor(data[start_idx:end_idx, :, :]), \
-          torch.tensor(label[start_idx:end_idx, :], dtype=torch.long)
+    data_batch = torch.tensor(data[start_idx:end_idx, :, :]).to(DEVICE)
+    label_batch = torch.tensor(label[start_idx:end_idx, :], dtype=torch.long).to(DEVICE)
+    yield data_batch, label_batch
 
 
 def train_one_epoch(optimizer, model):
@@ -119,6 +122,7 @@ def eval_one_epoch(model):
 
 def train():
   model = model_module.PointNetClassifier()
+  model.to(DEVICE)
   optimizer = optim.Adam(model.parameters(), lr=BASE_LR)
   lr_sched = optim.lr_scheduler.StepLR(optimizer, LR_DECAY_EPOCH, LR_DECAY_RATE)
   for epoch in range(EPOCH):
